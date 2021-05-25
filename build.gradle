@@ -1,16 +1,16 @@
 plugins {
-    id "com.jfrog.bintray" version '1.8.5'
-    id 'com.jfrog.artifactory' version '4.15.1'
+    id 'maven-publish'
+    id 'signing'
     id 'com.palantir.docker' version '0.25.0' apply false
     id 'org.jetbrains.kotlin.jvm' version "${kotlin_version}"
     id "com.github.harbby.gradle.serviceloader" version '1.1.5'
+    id 'io.github.gradle-nexus.publish-plugin' version '1.0.0'
 }
 
 apply plugin: 'kotlin'
 apply plugin: 'application'
 apply plugin: 'maven-publish'
 apply plugin: 'com.palantir.docker'
-apply plugin: 'com.jfrog.artifactory'
 
 ext {
     sharedDir = file("${project.rootDir}/shared")
@@ -31,8 +31,11 @@ repositories {
     mavenCentral()
 
     maven {
-        name 'TH2 Bintray'
-        url 'https://dl.bintray.com/exactpro/th2'
+        url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
+    }
+
+    maven {
+        url 'https://s01.oss.sonatype.org/content/repositories/releases/'
     }
 
     mavenLocal()
@@ -62,23 +65,64 @@ java {
     withSourcesJar()
 }
 
+// conditionals for publications
+tasks.withType(PublishToMavenRepository) {
+    onlyIf {
+        (repository == publishing.repositories.nexusRepository &&
+                project.hasProperty('nexus_user') &&
+                project.hasProperty('nexus_password') &&
+                project.hasProperty('nexus_url')) ||
+                (repository == publishing.repositories.sonatype &&
+                        project.hasProperty('sonatypeUsername') &&
+                        project.hasProperty('sonatypePassword')) ||
+                (repository == publishing.repositories.localRepo)
+    }
+}
+
+tasks.withType(Sign) {
+    onlyIf {
+        project.hasProperty('signingKey') && project.hasProperty('signingPassword')
+    }
+}
+
+// disable running task 'initializeSonatypeStagingRepository' on a gitlab
+tasks.whenTaskAdded { task ->
+    if (task.name == 'initializeSonatypeStagingRepository' &&
+            !(project.hasProperty('sonatypeUsername') && project.hasProperty('sonatypePassword'))
+    ) {
+        task.enabled = false
+    }
+}
+
 publishing {
     publications {
         mavenJava(MavenPublication) {
             from components.java
-        }
 
-        bintrayPublication(MavenPublication) {
-            from components.java
+            pom {
+                name = rootProject.name
+                packaging = 'jar'
+                description = rootProject.description
+                url = vcs_url
 
-            groupId group
-            artifactId rootProject.name
-            version project.version
+                scm {
+                    url = vcs_url
+                }
 
-            pom.withXml {
-                def root = asNode()
-                root.appendNode('name', rootProject.name)
-                root.appendNode('url', project.vcs_url)
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'developer'
+                        name = 'developer'
+                        email = 'developer@exactpro.com'
+                    }
+                }
             }
         }
     }
@@ -88,35 +132,44 @@ publishing {
             name = 'localRepo'
             url = sharedDir
         }
+
+        //Nexus repo to publish from gitlab
+        maven {
+            name = 'nexusRepository'
+            url = project.findProperty('nexus_url')
+
+            credentials {
+                username = project.findProperty('nexus_user')
+                password = project.findProperty('nexus_password')
+            }
+        }
     }
 }
 
-bintray {
-    user = "${bintray_user}"
-    key = "${bintray_key}"
-    publications = ['bintrayPublication']
-
-    pkg {
-        repo = 'th2'
-        name = rootProject.name
-        userOrg = 'exactpro'
-        licenses = ['Apache-2.0']
-        vcsUrl = project.vcs_url
-
-        version {
-            name = project.version
-            desc = project.version
-            released = new Date()
+nexusPublishing {
+    repositories {
+        sonatype {
+            nexusUrl.set(uri('https://s01.oss.sonatype.org/service/local/'))
+            snapshotRepositoryUrl.set(uri('https://s01.oss.sonatype.org/content/repositories/snapshots/'))
         }
     }
+}
 
-    publish = true
+signing {
+    def signingKey = findProperty("signingKey")
+    def signingPassword = findProperty("signingPassword")
+    useInMemoryPgpKeys(signingKey, signingPassword)
+    sign publishing.publications.mavenJava
+}
+
+clean {
+    delete sharedDir
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:2.10.1')
+    api platform('com.exactpro.th2:bom:3.0.0')
 
-    implementation 'com.exactpro.th2:common:3.0.1'
+    implementation 'com.exactpro.th2:common:3.13.4'
 
     implementation 'org.slf4j:slf4j-log4j12'
     implementation 'org.slf4j:slf4j-api'

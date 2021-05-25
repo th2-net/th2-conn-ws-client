@@ -1,4 +1,4 @@
-# WebSocket Client v0.0.1
+# WebSocket Client v0.0.2
 
 This microservice allows sending and receiving messages via WebSocket protocol
 
@@ -55,7 +55,7 @@ metadata:
   name: ws-client
 spec:
   image-name: ghcr.io/th2-net/th2-conn-ws-client
-  image-version: 0.0.1
+  image-version: 0.0.2
   custom-config:
     uri: wss://echo.websocket.org
     sessionAlias: api_session
@@ -81,3 +81,11 @@ spec:
         - first
         - raw 
 ```
+
+## Changelog
+
+### v0.0.2
+
+#### Fixed:
+
+* high idle CPU usage
