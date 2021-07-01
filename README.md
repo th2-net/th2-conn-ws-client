@@ -1,4 +1,4 @@
-# WebSocket Client v0.0.3
+# WebSocket Client v0.1.0
 
 This microservice allows sending and receiving messages via WebSocket protocol
 
@@ -10,6 +10,11 @@ The main configuration is done by changing following properties:
 + **frameType** - outgoing WebSocket frame type, can be either `TEXT` or `BINARY` (`TEXT` by default)
 + **sessionAlias** - session alias for incoming/outgoing th2 messages (e.g. `ws_api`)
 + **handlerSettings** - WebSocket event handler settings
++ **grpcStartControl** - enables start/stop control via [gRPC service](https://github.com/th2-net/th2-grpc-conn/blob/master/src/main/proto/th2_grpc_conn/conn.proto#L24) (`false` by default)
++ **autoStart** - start service automatically (`true` by default and if `startControl` is `false`)
++ **autoStopAfter** - stop after N seconds if the service was started automatically prior to send (`0` by default which means disabled)
+
+Service will also automatically connect prior to message send if it wasn't connected
 
 ### Event handler configuration
 
@@ -23,6 +28,8 @@ Event handler can be configured by changing following properties in the `handler
 uri: wss://echo.websocket.org
 frameType: TEXT
 sessionAlias: api_session
+startControl: true
+autoStart: true
 handlerSettings:
   pingInterval: 30000
 ```
@@ -55,10 +62,13 @@ metadata:
   name: ws-client
 spec:
   image-name: ghcr.io/th2-net/th2-conn-ws-client
-  image-version: 0.0.3
+  image-version: 0.1.0
   custom-config:
     uri: wss://echo.websocket.org
     sessionAlias: api_session
+    grpcStartControl: true
+    autoStart: true
+    autoStopAfter: 300
     handlerSettings:
       pingInterval: 30000
   type: th2-conn
@@ -83,6 +93,13 @@ spec:
 ```
 
 ## Changelog
+
+### v0.1.0
+
+#### Added:
+
+* ability to start/stop via gRPC service
+* auto-start/stop feature
 
 ### v0.0.2
 
