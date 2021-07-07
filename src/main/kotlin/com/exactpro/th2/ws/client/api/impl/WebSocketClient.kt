@@ -45,13 +45,9 @@ class WebSocketClient(
 
     private fun awaitSocket(): WebSocket {
         logger.debug { "Waiting for a connected socket" }
-
-        while (!::socket.isInitialized || socket.isOutputClosed) {
-            Thread.sleep(1)
-        }
-
+        if (!isRunning) error("Client is not started") // or should we start it instead?
+        while (!::socket.isInitialized || socket.isOutputClosed) Thread.sleep(1)
         logger.debug { "Acquired connected socket" }
-
         return socket
     }
 
