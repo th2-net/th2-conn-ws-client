@@ -28,37 +28,50 @@ import java.net.http.WebSocket
 import java.nio.ByteBuffer
 import java.util.Base64
 import java.util.concurrent.CompletionStage
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 class WebSocketClient(
     private val uri: URI,
     private val handler: IHandler,
     private val onMessage: (message: ByteArray, textual: Boolean, direction: Direction) -> Unit,
     private val onEvent: (cause: Throwable?, message: () -> String) -> Unit
-) : IClient, WebSocket.Listener, AutoCloseable {
+) : IClient, WebSocket.Listener {
     private val logger = KotlinLogging.logger {}
     private val textFrames = mutableListOf<String>()
     private val binaryFrames = mutableListOf<ByteArray>()
-    @Volatile private var running: Boolean = true
-    val isRunning: Boolean get() = running
-    private var socket = connect()
+    private val lock = ReentrantLock()
+    private lateinit var socket: WebSocket
 
-    override fun sendText(text: String) {
+    @Volatile var isRunning: Boolean = false
+        private set
+
+    private fun awaitSocket(): WebSocket {
+        when {
+            !isRunning -> start()
+            ::socket.isInitialized || socket.isOutputClosed -> connect()
+        }
+
+        return socket
+    }
+
+    override fun sendText(text: String) = lock.withLock {
         logger.debug { "Sending text: $text" }
         val preparedText = handler.prepareText(this, text)
-        socket.sendText(preparedText, true)
+        awaitSocket().sendText(preparedText, true)
         onMessage(preparedText.toByteArray(), true, SECOND)
     }
 
-    override fun sendBinary(data: ByteArray) {
+    override fun sendBinary(data: ByteArray) = lock.withLock {
         logger.debug { "Sending binary: ${data.toBase64()}" }
         val preparedData = handler.prepareBinary(this, data)
-        socket.sendBinary(ByteBuffer.wrap(preparedData), true)
+        awaitSocket().sendBinary(ByteBuffer.wrap(preparedData), true)
         onMessage(preparedData, false, SECOND)
     }
 
-    override fun sendPing(message: ByteArray) {
+    override fun sendPing(message: ByteArray): Unit = lock.withLock {
         logger.debug { "Sending ping: ${message.toBase64()}" }
-        socket.sendPing(ByteBuffer.wrap(message))
+        awaitSocket().sendPing(ByteBuffer.wrap(message))
     }
 
     override fun onOpen(socket: WebSocket) = try {
@@ -135,62 +148,86 @@ class WebSocketClient(
     override fun onClose(socket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? = try {
         onInfo { "Disconnected from: $uri - statusCode: $statusCode, reason: $reason" }
         handler.onClose(statusCode, reason)
-        this.socket = connect()
+        connect()
         null
     } catch (e: Exception) {
         onError(e) { "Failed to handle onClose event" }
-        this.socket = connect()
+        connect()
         null
     }
 
     override fun onError(socket: WebSocket, error: Throwable) = try {
         onError(error) { "Disconnected from: $uri" }
         handler.onError(error)
-        this.socket = connect()
+        connect()
     } catch (e: Exception) {
         onError(e) { "Failed to handle onError event" }
-        this.socket = connect()
+        connect()
     }
 
-    override fun close() {
-        logger.info { "Closing" }
-        running = false
+    fun start() = lock.withLock {
+        when {
+            isRunning -> onInfo { "Client is already running" }
+            else -> {
+                onInfo { "Starting client" }
+                isRunning = true
+                connect()
+                onInfo { "Started client" }
+            }
+        }
+    }
+
+    fun stop() = lock.withLock {
+        if (!isRunning || !::socket.isInitialized) {
+            onInfo { "Client is already stopped" }
+            return
+        }
+
+        onInfo { "Stopping client" }
 
         socket.runCatching {
+            isRunning = false
+
             if (isOutputClosed) {
                 logger.warn { "Trying to close socket abruptly" }
                 abort()
             } else {
                 logger.info { "Trying to close socket gracefully" }
+
+                handler.runCatching(IHandler::preClose).onFailure {
+                    onError(it) { "Failed to handle preClose event" }
+                }
+
                 sendClose(WebSocket.NORMAL_CLOSURE, "")
             }
         }.onFailure {
             logger.error(it) { "Failed to close socket" }
         }
 
-        logger.info { "Closed" }
+        onInfo { "Stopped client" }
     }
 
-    private fun connect(
+    private fun connect() = lock.withLock {
+        if (!isRunning) return
+        this.socket = createSocket()
+    }
+
+    private fun createSocket(
         reconnectDelay: Long = 1000,
         maxReconnectDelay: Long = 60000
     ): WebSocket {
-        if (running) {
-            textFrames.clear()
-            binaryFrames.clear()
+        textFrames.clear()
+        binaryFrames.clear()
 
-            return HttpClient.newHttpClient()
-                .newWebSocketBuilder()
-                .buildAsync(uri, this)
-                .exceptionally {
-                    onError(it) { "Failed to connect to: $uri" }
-                    Thread.sleep(reconnectDelay)
-                    connect((reconnectDelay * 2).coerceAtMost(maxReconnectDelay))
-                }
-                .get()
-        }
-
-        return socket
+        return HttpClient.newHttpClient()
+            .newWebSocketBuilder()
+            .buildAsync(uri, this)
+            .exceptionally {
+                onError(it) { "Failed to connect to: $uri" }
+                Thread.sleep(reconnectDelay)
+                createSocket((reconnectDelay * 2).coerceAtMost(maxReconnectDelay))
+            }
+            .get()
     }
 
     private fun onInfo(message: () -> String) {

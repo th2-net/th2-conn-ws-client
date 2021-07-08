@@ -24,6 +24,7 @@ import com.exactpro.th2.common.grpc.Direction
 import com.exactpro.th2.common.grpc.EventBatch
 import com.exactpro.th2.common.grpc.MessageGroupBatch
 import com.exactpro.th2.common.schema.factory.CommonFactory
+import com.exactpro.th2.common.schema.grpc.router.GrpcRouter
 import com.exactpro.th2.common.schema.message.MessageListener
 import com.exactpro.th2.common.schema.message.MessageRouter
 import com.exactpro.th2.common.schema.message.QueueAttribute
@@ -48,7 +49,9 @@ import java.util.ServiceLoader
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
+import kotlin.concurrent.withLock
 import kotlin.system.exitProcess
 import kotlin.text.Charsets.UTF_8
 
@@ -84,8 +87,9 @@ fun main(args: Array<String>) = try {
     val settings = factory.getCustomConfiguration(Settings::class.java, mapper)
     val eventRouter = factory.eventBatchRouter
     val messageRouter = factory.messageRouterMessageGroupBatch
+    val grpcRouter = factory.grpcRouter
 
-    run(settings, eventRouter, messageRouter, handler) { resource, destructor ->
+    run(settings, eventRouter, messageRouter, grpcRouter, handler) { resource, destructor ->
         resources += resource to destructor
     }
 } catch (e: Exception) {
@@ -97,6 +101,7 @@ fun run(
     settings: Settings,
     eventRouter: MessageRouter<EventBatch>,
     messageRouter: MessageRouter<MessageGroupBatch>,
+    grpcRouter: GrpcRouter,
     handler: IHandler,
     registerResource: (name: String, destructor: () -> Unit) -> Unit
 ) {
@@ -133,9 +138,15 @@ fun run(
         handler,
         onMessage,
         onEvent
-    ).apply { registerResource("client", ::close) }
+    ).apply { registerResource("client", ::stop) }
+
+    val controller = ClientController(client).apply { registerResource("controller", ::close) }
 
     val listener = MessageListener<MessageGroupBatch> { _, message ->
+        if (!controller.isRunning) { // should we reschedule stop if service is already running?
+            controller.start(settings.autoStopAfter)
+        }
+
         message.groupsList.forEach { group ->
             group.runCatching {
                 require(messagesCount == 1) { "Message group contains more than 1 message" }
@@ -159,8 +170,14 @@ fun run(
 
     LOGGER.info { "Successfully started" }
 
-    while (client.isRunning) {
-        Thread.sleep(1000)
+    if (!settings.autoStart) client.start()
+
+    if (settings.grpcStartControl) grpcRouter.startServer(ControlService(controller))
+
+    ReentrantLock().run {
+        val condition = newCondition()
+        registerResource("await-shutdown") { withLock(condition::signalAll) }
+        withLock(condition::await)
     }
 
     LOGGER.info { "Finished running" }
@@ -170,7 +187,10 @@ data class Settings(
     val uri: String,
     val frameType: FrameType = TEXT,
     val sessionAlias: String,
-    val handlerSettings: IHandlerSettings? = null
+    val handlerSettings: IHandlerSettings? = null,
+    val grpcStartControl: Boolean = false,
+    val autoStart: Boolean = false,
+    val autoStopAfter: Int = 0
 ) {
     enum class FrameType {
         TEXT {

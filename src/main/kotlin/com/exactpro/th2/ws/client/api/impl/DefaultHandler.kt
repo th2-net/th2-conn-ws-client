@@ -28,17 +28,17 @@ class DefaultHandler : IHandler {
     private lateinit var settings: DefaultHandlerSettings
     private lateinit var timer: Timer
 
-    override fun init(settings: IHandlerSettings?) {
+    override fun init(settings: IHandlerSettings?) = synchronized(this) {
         this.settings = requireNotNull(settings as? DefaultHandlerSettings) {
             "settings is not an instance of ${DefaultHandlerSettings::class.simpleName}"
         }
     }
 
-    override fun onOpen(client: IClient) {
+    override fun onOpen(client: IClient) = synchronized(this) {
         createTimer(client)
     }
 
-    override fun onPing(client: IClient, data: ByteArray) {
+    override fun onPing(client: IClient, data: ByteArray) = synchronized(this) {
         cancelTimer()
         createTimer(client)
     }
@@ -57,9 +57,7 @@ class DefaultHandler : IHandler {
         }
     }
 
-    override fun close() {
-        cancelTimer()
-    }
+    override fun close() = synchronized(this, ::cancelTimer)
 
     companion object {
         private val EMPTY_MESSAGE = byteArrayOf()

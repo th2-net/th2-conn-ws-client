@@ -16,6 +16,9 @@
 
 package com.exactpro.th2.ws.client.api
 
+import javax.annotation.concurrent.ThreadSafe
+
+@ThreadSafe
 interface IHandler : AutoCloseable {
     fun init(settings: IHandlerSettings?) {}
     fun onOpen(client: IClient) {}
@@ -25,6 +28,7 @@ interface IHandler : AutoCloseable {
     fun onPong(client: IClient, data: ByteArray) {}
     fun onClose(statusCode: Int, reason: String) {}
     fun onError(error: Throwable) {}
+    fun preClose() {}
     fun prepareText(client: IClient, text: String): String = text
     fun prepareBinary(client: IClient, data: ByteArray): ByteArray = data
     override fun close() {}
