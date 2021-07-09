@@ -49,7 +49,7 @@ class WebSocketClient(
     private fun awaitSocket(): WebSocket {
         when {
             !isRunning -> start()
-            ::socket.isInitialized || socket.isOutputClosed -> connect()
+            !::socket.isInitialized || socket.isOutputClosed -> connect()
         }
 
         return socket

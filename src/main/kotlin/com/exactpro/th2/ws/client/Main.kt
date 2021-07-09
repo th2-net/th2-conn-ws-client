@@ -168,11 +168,11 @@ fun run(
         throw IllegalStateException("Failed to subscribe to input queue", it)
     }
 
-    LOGGER.info { "Successfully started" }
-
-    if (!settings.autoStart) client.start()
+    if (settings.autoStart) client.start()
 
     if (settings.grpcStartControl) grpcRouter.startServer(ControlService(controller))
+
+    LOGGER.info { "Successfully started" }
 
     ReentrantLock().run {
         val condition = newCondition()
@@ -189,7 +189,7 @@ data class Settings(
     val sessionAlias: String,
     val handlerSettings: IHandlerSettings? = null,
     val grpcStartControl: Boolean = false,
-    val autoStart: Boolean = false,
+    val autoStart: Boolean = true,
     val autoStopAfter: Int = 0
 ) {
     enum class FrameType {
