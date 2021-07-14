@@ -21,6 +21,7 @@ Service will also automatically connect prior to message send if it wasn't conne
 Event handler can be configured by changing following properties in the `handlerSettings` block of the main configuration:
 
 + **pingInterval** - interval for sending ping-messages in ms (`30000` by default)
++ **defaultHeaders** - the list of headers and their values to add to the HTTP handshake request (the list is **empty** by default)
 
 ### Configuration example
 
@@ -32,6 +33,12 @@ startControl: true
 autoStart: true
 handlerSettings:
   pingInterval: 30000
+  defaultHeaders:
+    HeaderA:
+      - value1
+      - value2
+    HeaderB:
+      - value3
 ```
 
 ### MQ pins
@@ -93,6 +100,11 @@ spec:
 ```
 
 ## Changelog
+
+### v0.2.0
+
+* a new `preOpen` method that allows the handler to adjust some client's settings
+* `DeafultHandler` has the parameter to specify default headers for HTTP handshake
 
 ### v0.1.1
 
