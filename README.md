@@ -1,4 +1,4 @@
-# WebSocket Client v0.1.0
+# WebSocket Client v0.2.0
 
 This microservice allows sending and receiving messages via WebSocket protocol
 
@@ -21,6 +21,7 @@ Service will also automatically connect prior to message send if it wasn't conne
 Event handler can be configured by changing following properties in the `handlerSettings` block of the main configuration:
 
 + **pingInterval** - interval for sending ping-messages in ms (`30000` by default)
++ **defaultHeaders** - map of headers and their values to add to the HTTP handshake request (the map is **empty** by default)
 
 ### Configuration example
 
@@ -32,6 +33,12 @@ startControl: true
 autoStart: true
 handlerSettings:
   pingInterval: 30000
+  defaultHeaders:
+    HeaderA:
+      - value1
+      - value2
+    HeaderB:
+      - value3
 ```
 
 ### MQ pins
@@ -62,7 +69,7 @@ metadata:
   name: ws-client
 spec:
   image-name: ghcr.io/th2-net/th2-conn-ws-client
-  image-version: 0.1.0
+  image-version: 0.2.0
   custom-config:
     uri: wss://echo.websocket.org
     sessionAlias: api_session
@@ -93,6 +100,20 @@ spec:
 ```
 
 ## Changelog
+
+### v0.2.0
+
+#### Added
+
+* a new `preOpen` method that allows the handler to adjust some client's settings
+* `DefaultHandler` has the parameter to specify default headers for HTTP handshake
+
+### v0.1.1
+
+#### Fixed:
+
+* inverted `autoStart` setting behavior
+* reconnect loop during socket availability check
 
 ### v0.1.0
 

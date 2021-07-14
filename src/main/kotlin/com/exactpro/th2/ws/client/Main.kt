@@ -144,12 +144,12 @@ fun run(
 
     val controller = ClientController(client).apply { registerResource("controller", ::close) }
 
-    val listener = MessageListener<MessageGroupBatch> { _, message ->
+    val listener = MessageListener<MessageGroupBatch> { _, groupBatch ->
         if (!controller.isRunning) { // should we reschedule stop if service is already running?
             controller.start(settings.autoStopAfter)
         }
 
-        message.groupsList.forEach { group ->
+        groupBatch.groupsList.forEach { group ->
             group.runCatching {
                 require(messagesCount == 1) { "Message group contains more than 1 message" }
                 val message = messagesList[0]
@@ -172,11 +172,11 @@ fun run(
         throw IllegalStateException("Failed to subscribe to input queue", it)
     }
 
-    LOGGER.info { "Successfully started" }
-
-    if (!settings.autoStart) client.start()
+    if (settings.autoStart) client.start()
 
     if (settings.grpcStartControl) grpcRouter.startServer(ControlService(controller))
+
+    LOGGER.info { "Successfully started" }
 
     ReentrantLock().run {
         val condition = newCondition()
@@ -193,7 +193,7 @@ data class Settings(
     val sessionAlias: String,
     val handlerSettings: IHandlerSettings? = null,
     val grpcStartControl: Boolean = false,
-    val autoStart: Boolean = false,
+    val autoStart: Boolean = true,
     val autoStopAfter: Int = 0
 ) {
     enum class FrameType {

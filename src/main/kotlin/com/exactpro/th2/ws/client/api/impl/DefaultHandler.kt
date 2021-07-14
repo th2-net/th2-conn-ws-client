@@ -17,6 +17,7 @@
 package com.exactpro.th2.ws.client.api.impl
 
 import com.exactpro.th2.ws.client.api.IClient
+import com.exactpro.th2.ws.client.api.IClientSettings
 import com.exactpro.th2.ws.client.api.IHandler
 import com.exactpro.th2.ws.client.api.IHandlerSettings
 import mu.KotlinLogging
@@ -32,6 +33,10 @@ class DefaultHandler : IHandler {
         this.settings = requireNotNull(settings as? DefaultHandlerSettings) {
             "settings is not an instance of ${DefaultHandlerSettings::class.simpleName}"
         }
+    }
+
+    override fun preOpen(clientSettings: IClientSettings) {
+        settings.defaultHeaders.forEach(clientSettings::addHeaders)
     }
 
     override fun onOpen(client: IClient) = synchronized(this) {
