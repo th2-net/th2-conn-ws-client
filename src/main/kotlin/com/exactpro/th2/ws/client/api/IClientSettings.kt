@@ -14,11 +14,18 @@
  * limitations under the License.
  */
 
-package com.exactpro.th2.ws.client.api.impl
+package com.exactpro.th2.ws.client.api
 
-import com.exactpro.th2.ws.client.api.IHandlerSettings
+/**
+ * Provides the ability to configure the [IClient] implementation
+ */
+interface IClientSettings {
+    /**
+     * Adds HTTP header to the WebSocket client handshake request
+     */
+    fun addHeader(name: String, value: String)
 
-data class DefaultHandlerSettings(
-    val pingInterval: Long = 30000,
-    val defaultHeaders: Map<String, List<String>> = emptyMap()
-) : IHandlerSettings
+    fun addHeaders(name: String, values: Collection<String>) {
+        values.forEach { addHeader(name, it) }
+    }
+}

@@ -142,12 +142,12 @@ fun run(
 
     val controller = ClientController(client).apply { registerResource("controller", ::close) }
 
-    val listener = MessageListener<MessageGroupBatch> { _, message ->
+    val listener = MessageListener<MessageGroupBatch> { _, groupBatch ->
         if (!controller.isRunning) { // should we reschedule stop if service is already running?
             controller.start(settings.autoStopAfter)
         }
 
-        message.groupsList.forEach { group ->
+        groupBatch.groupsList.forEach { group ->
             group.runCatching {
                 require(messagesCount == 1) { "Message group contains more than 1 message" }
                 val message = messagesList[0]

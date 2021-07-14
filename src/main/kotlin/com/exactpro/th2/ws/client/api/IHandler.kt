@@ -21,6 +21,7 @@ import javax.annotation.concurrent.ThreadSafe
 @ThreadSafe
 interface IHandler : AutoCloseable {
     fun init(settings: IHandlerSettings?) {}
+    fun preOpen(clientSettings: IClientSettings) {}
     fun onOpen(client: IClient) {}
     fun onText(client: IClient, text: String) {}
     fun onBinary(client: IClient, data: ByteArray) {}

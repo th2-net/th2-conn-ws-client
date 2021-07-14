@@ -20,6 +20,7 @@ import com.exactpro.th2.common.grpc.Direction
 import com.exactpro.th2.common.grpc.Direction.FIRST
 import com.exactpro.th2.common.grpc.Direction.SECOND
 import com.exactpro.th2.ws.client.api.IClient
+import com.exactpro.th2.ws.client.api.IClientSettings
 import com.exactpro.th2.ws.client.api.IHandler
 import mu.KotlinLogging
 import java.net.URI
@@ -221,6 +222,9 @@ class WebSocketClient(
 
         return HttpClient.newHttpClient()
             .newWebSocketBuilder()
+            .also {
+                handler.preOpen(WebSocketClientSettings(it))
+            }
             .buildAsync(uri, this)
             .exceptionally {
                 onError(it) { "Failed to connect to: $uri" }
@@ -243,6 +247,12 @@ class WebSocketClient(
     private fun onComplete(socket: WebSocket): CompletionStage<*>? {
         socket.request(1)
         return null
+    }
+
+    private class WebSocketClientSettings(private val builder: WebSocket.Builder) : IClientSettings {
+        override fun addHeader(name: String, value: String) {
+            builder.header(name, value)
+        }
     }
 
     companion object {
