@@ -20,7 +20,6 @@ import com.exactpro.th2.ws.client.api.IClient
 import com.exactpro.th2.ws.client.api.IClientSettings
 import com.exactpro.th2.ws.client.api.IHandler
 import com.exactpro.th2.ws.client.api.IHandlerSettings
-import com.exactpro.th2.ws.client.api.addHeaders
 import mu.KotlinLogging
 import java.util.Timer
 import kotlin.concurrent.timer
@@ -37,7 +36,7 @@ class DefaultHandler : IHandler {
     }
 
     override fun preOpen(clientSettings: IClientSettings) {
-        settings.defaultHeaders.forEach { (header, values) -> clientSettings.addHeaders(header, values) }
+        settings.defaultHeaders.forEach(clientSettings::addHeaders)
     }
 
     override fun onOpen(client: IClient) = synchronized(this) {

@@ -24,8 +24,8 @@ interface IClientSettings {
      * Adds HTTP header to the WebSocket client handshake request
      */
     fun addHeader(name: String, value: String)
-}
 
-fun IClientSettings.addHeaders(name: String, values: Collection<String>) {
-    values.forEach { addHeader(name, it) }
+    fun addHeaders(name: String, values: Collection<String>) {
+        values.forEach { addHeader(name, it) }
+    }
 }
