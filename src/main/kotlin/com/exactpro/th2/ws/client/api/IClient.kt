@@ -16,8 +16,10 @@
 
 package com.exactpro.th2.ws.client.api
 
+import com.exactpro.th2.common.grpc.EventID
+
 interface IClient {
-    fun sendText(text: String, onSuccess: (message: ByteArray) -> Unit)
-    fun sendBinary(data: ByteArray, onSuccess: (message: ByteArray) -> Unit)
+    fun sendText(text: String, eventID: EventID? = null)
+    fun sendBinary(data: ByteArray, eventID: EventID? = null)
     fun sendPing(message: ByteArray)
 }

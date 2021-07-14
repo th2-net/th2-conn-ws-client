@@ -137,10 +137,9 @@ fun run(
     val client = WebSocketClient(
         URI(settings.uri),
         handler,
+        onMessage,
         onEvent
-    ) {
-        onMessage(it, settings.frameType == TEXT, Direction.FIRST, null)
-    }.apply { registerResource("client", ::stop) }
+    ).apply { registerResource("client", ::stop) }
 
     val controller = ClientController(client).apply { registerResource("controller", ::close) }
 
@@ -152,10 +151,9 @@ fun run(
         groupBatch.groupsList.forEach { group ->
             group.runCatching {
                 require(messagesCount == 1) { "Message group contains more than 1 message" }
-                val message = messagesList[0]
-                require(message.hasRawMessage()) { "Message in the group is not a raw message" }
-                settings.frameType.send(client, message.rawMessage.body.toByteArray(), message.rawMessage.parentEventId) {
-                    onMessage(it, settings.frameType == TEXT, Direction.SECOND, message.rawMessage.parentEventId)
+                messagesList[0].let {
+                    require(it.hasRawMessage()) { "Message in the group is not a raw message" }
+                    settings.frameType.send(client, it.rawMessage.body.toByteArray(), it.rawMessage.parentEventId)
                 }
             }.recoverCatching {
                 LOGGER.error(it) { "Failed to handle message group: ${group.toPrettyString()}" }
@@ -198,13 +196,13 @@ data class Settings(
 ) {
     enum class FrameType {
         TEXT {
-            override fun send(client: IClient, data: ByteArray, eventID: EventID, onSuccess: (message: ByteArray) -> Unit?) = client.sendText(data.toString(UTF_8), onSuccess)
+            override fun send(client: IClient, data: ByteArray, eventID: EventID?) = client.sendText(data.toString(UTF_8), eventID)
         },
         BINARY {
-            override fun send(client: IClient, data: ByteArray, eventID: EventID, onSuccess: (message: ByteArray) -> Unit?) = client.sendBinary(data, onSuccess)
+            override fun send(client: IClient, data: ByteArray, eventID: EventID?) = client.sendBinary(data, eventID)
         };
 
-        abstract fun send(client: IClient, data: ByteArray, eventID: EventID, onSuccess: (message: ByteArray) -> Unit?)
+        abstract fun send(client: IClient, data: ByteArray, eventID: EventID?)
     }
 }
 
