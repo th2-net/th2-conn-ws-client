@@ -106,7 +106,7 @@ spec:
 #### Added
 
 * a new `preOpen` method that allows the handler to adjust some client's settings
-* `DeafultHandler` has the parameter to specify default headers for HTTP handshake
+* `DefaultHandler` has the parameter to specify default headers for HTTP handshake
 
 ### v0.1.1
 
