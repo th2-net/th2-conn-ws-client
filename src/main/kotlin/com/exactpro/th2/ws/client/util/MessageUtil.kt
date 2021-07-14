@@ -21,6 +21,7 @@ package com.exactpro.th2.ws.client.util
 import com.exactpro.th2.common.grpc.AnyMessage
 import com.exactpro.th2.common.grpc.ConnectionID
 import com.exactpro.th2.common.grpc.Direction
+import com.exactpro.th2.common.grpc.EventID
 import com.exactpro.th2.common.grpc.MessageGroup
 import com.exactpro.th2.common.grpc.MessageGroupBatch
 import com.exactpro.th2.common.grpc.RawMessage
@@ -44,8 +45,12 @@ fun ByteArray.toBatch(
     connectionId: ConnectionID,
     direction: Direction,
     sequence: Long,
+    parentEventID: EventID?
 ): MessageGroupBatch = RawMessage.newBuilder().apply {
     this.body = ByteString.copyFrom(this@toBatch)
+    if (parentEventID!=null) {
+        this.parentEventIdBuilder.mergeFrom(parentEventID)
+    }
     this.metadataBuilder {
         this.timestamp = Instant.now().toTimestamp()
         this.idBuilder {

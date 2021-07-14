@@ -17,7 +17,7 @@
 package com.exactpro.th2.ws.client.api
 
 interface IClient {
-    fun sendText(text: String)
-    fun sendBinary(data: ByteArray)
+    fun sendText(text: String, onSuccess: (message: ByteArray) -> Unit)
+    fun sendBinary(data: ByteArray, onSuccess: (message: ByteArray) -> Unit)
     fun sendPing(message: ByteArray)
 }

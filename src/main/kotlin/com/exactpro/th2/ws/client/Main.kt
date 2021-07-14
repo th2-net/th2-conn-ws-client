@@ -22,6 +22,7 @@ import com.exactpro.th2.common.event.Event
 import com.exactpro.th2.common.grpc.ConnectionID
 import com.exactpro.th2.common.grpc.Direction
 import com.exactpro.th2.common.grpc.EventBatch
+import com.exactpro.th2.common.grpc.EventID
 import com.exactpro.th2.common.grpc.MessageGroupBatch
 import com.exactpro.th2.common.schema.factory.CommonFactory
 import com.exactpro.th2.common.schema.grpc.router.GrpcRouter
@@ -122,10 +123,10 @@ fun run(
     val outgoingSequence = createSequence()
 
     //TODO: add batching (by size or time)
-    val onMessage = { message: ByteArray, _: Boolean, direction: Direction ->
+    val onMessage = { message: ByteArray, _: Boolean, direction: Direction, eventID: EventID? ->
         val sequence = if (direction == Direction.FIRST) incomingSequence else outgoingSequence
         val attribute = if (direction == Direction.FIRST) QueueAttribute.FIRST else QueueAttribute.SECOND
-        messageRouter.send(message.toBatch(connectionId, direction, sequence()), attribute.toString())
+        messageRouter.send(message.toBatch(connectionId, direction, sequence(), eventID), attribute.toString())
     }
 
     val onEvent = { cause: Throwable?, message: () -> String ->
@@ -136,9 +137,10 @@ fun run(
     val client = WebSocketClient(
         URI(settings.uri),
         handler,
-        onMessage,
         onEvent
-    ).apply { registerResource("client", ::stop) }
+    ) {
+        onMessage(it, settings.frameType == TEXT, Direction.FIRST, null)
+    }.apply { registerResource("client", ::stop) }
 
     val controller = ClientController(client).apply { registerResource("controller", ::close) }
 
@@ -152,7 +154,9 @@ fun run(
                 require(messagesCount == 1) { "Message group contains more than 1 message" }
                 val message = messagesList[0]
                 require(message.hasRawMessage()) { "Message in the group is not a raw message" }
-                settings.frameType.send(client, message.rawMessage.body.toByteArray())
+                settings.frameType.send(client, message.rawMessage.body.toByteArray(), message.rawMessage.parentEventId) {
+                    onMessage(it, settings.frameType == TEXT, Direction.SECOND, message.rawMessage.parentEventId)
+                }
             }.recoverCatching {
                 LOGGER.error(it) { "Failed to handle message group: ${group.toPrettyString()}" }
                 eventRouter.storeEvent(rootEventId, "Failed to handle message group: ${group.toPrettyString()}", "Error", it)
@@ -194,13 +198,13 @@ data class Settings(
 ) {
     enum class FrameType {
         TEXT {
-            override fun send(client: IClient, data: ByteArray) = client.sendText(data.toString(UTF_8))
+            override fun send(client: IClient, data: ByteArray, eventID: EventID, onSuccess: (message: ByteArray) -> Unit?) = client.sendText(data.toString(UTF_8), onSuccess)
         },
         BINARY {
-            override fun send(client: IClient, data: ByteArray) = client.sendBinary(data)
+            override fun send(client: IClient, data: ByteArray, eventID: EventID, onSuccess: (message: ByteArray) -> Unit?) = client.sendBinary(data, onSuccess)
         };
 
-        abstract fun send(client: IClient, data: ByteArray)
+        abstract fun send(client: IClient, data: ByteArray, eventID: EventID, onSuccess: (message: ByteArray) -> Unit?)
     }
 }
 
