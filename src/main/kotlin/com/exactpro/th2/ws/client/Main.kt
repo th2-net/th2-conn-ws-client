@@ -19,6 +19,7 @@
 package com.exactpro.th2.ws.client
 
 import com.exactpro.th2.common.event.Event
+import com.exactpro.th2.common.event.EventUtils
 import com.exactpro.th2.common.grpc.ConnectionID
 import com.exactpro.th2.common.grpc.Direction
 import com.exactpro.th2.common.grpc.EventBatch
@@ -123,9 +124,17 @@ fun run(
     val outgoingSequence = createSequence()
 
     //TODO: add batching (by size or time)
-    val onMessage = { message: ByteArray, _: Boolean, direction: Direction, eventID: EventID? ->
+    val onMessage = { message: ByteArray, textual: Boolean, direction: Direction, eventID: EventID? ->
         eventID?.let {
-            eventRouter.storeEvent(eventID.id, "Message was successfully sent", "Info", null)
+            eventRouter.storeEvent(Event.start().apply {
+                endTimestamp()
+                name("Message was successfully sent")
+                type("Info")
+                status(Event.Status.PASSED)
+                if (textual) {
+                    bodyData(EventUtils.createMessageBean(message.decodeToString()))
+                }
+            }, eventID.id)
         }
         val sequence = if (direction == Direction.FIRST) incomingSequence else outgoingSequence
         val attribute = if (direction == Direction.FIRST) QueueAttribute.FIRST else QueueAttribute.SECOND
