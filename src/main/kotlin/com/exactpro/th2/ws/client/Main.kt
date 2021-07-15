@@ -124,6 +124,9 @@ fun run(
 
     //TODO: add batching (by size or time)
     val onMessage = { message: ByteArray, _: Boolean, direction: Direction, eventID: EventID? ->
+        eventID?.let {
+            eventRouter.storeEvent(eventID.id, "Message was successfully sent", "Info", null)
+        }
         val sequence = if (direction == Direction.FIRST) incomingSequence else outgoingSequence
         val attribute = if (direction == Direction.FIRST) QueueAttribute.FIRST else QueueAttribute.SECOND
         messageRouter.send(message.toBatch(connectionId, direction, sequence(), eventID), attribute.toString())

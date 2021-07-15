@@ -66,7 +66,7 @@ class WebSocketClient(
         logger.debug { "Sending binary: ${data.toBase64()}" }
         val preparedData = handler.prepareBinary(this, data)
         awaitSocket().sendBinary(ByteBuffer.wrap(preparedData), true)
-        onMessage(preparedData, true, Direction.SECOND, eventID)
+        onMessage(preparedData, false, Direction.SECOND, eventID)
     }
 
     override fun sendPing(message: ByteArray): Unit = lock.withLock {
