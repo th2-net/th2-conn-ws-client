@@ -125,7 +125,7 @@ fun run(
 
     //TODO: add batching (by size or time)
     val onMessage = { message: ByteArray, textual: Boolean, direction: Direction, eventId: EventID? ->
-        eventId?.let {
+        if (eventId != null && direction==Direction.SECOND) {
             eventRouter.storeEvent(Event.start().apply {
                 endTimestamp()
                 name("Message was successfully processed")
