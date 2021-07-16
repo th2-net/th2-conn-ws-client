@@ -45,11 +45,11 @@ fun ByteArray.toBatch(
     connectionId: ConnectionID,
     direction: Direction,
     sequence: Long,
-    parentEventID: EventID?
+    parentEventId: EventID?
 ): MessageGroupBatch = RawMessage.newBuilder().apply {
     this.body = ByteString.copyFrom(this@toBatch)
-    if (parentEventID!=null) {
-        this.parentEventIdBuilder.mergeFrom(parentEventID)
+    if (parentEventId!=null) {
+        this.parentEventIdBuilder.mergeFrom(parentEventId)
     }
     this.metadataBuilder {
         this.timestamp = Instant.now().toTimestamp()

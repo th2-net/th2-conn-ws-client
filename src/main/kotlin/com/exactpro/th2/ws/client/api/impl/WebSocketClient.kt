@@ -21,6 +21,8 @@ import com.exactpro.th2.common.grpc.EventID
 import com.exactpro.th2.ws.client.api.IClient
 import com.exactpro.th2.ws.client.api.IClientSettings
 import com.exactpro.th2.ws.client.api.IHandler
+import com.exactpro.th2.common.grpc.Direction.FIRST
+import com.exactpro.th2.common.grpc.Direction.SECOND
 import mu.KotlinLogging
 import java.net.URI
 import java.net.http.HttpClient
@@ -34,7 +36,7 @@ import kotlin.concurrent.withLock
 class WebSocketClient(
     private val uri: URI,
     private val handler: IHandler,
-    private val onMessage: (message: ByteArray, textual: Boolean, direction: Direction, eventID: EventID?) -> Unit,
+    private val onMessage: (message: ByteArray, textual: Boolean, direction: Direction, eventId: EventID?) -> Unit,
     private val onEvent: (cause: Throwable?, message: () -> String) -> Unit
 ) : IClient, WebSocket.Listener {
     private val logger = KotlinLogging.logger {}
@@ -55,18 +57,18 @@ class WebSocketClient(
         return socket
     }
 
-    override fun sendText(text: String, eventID: EventID?) = lock.withLock {
+    override fun sendText(text: String, eventId: EventID?) = lock.withLock {
         logger.debug { "Sending text: $text" }
         val preparedText = handler.prepareText(this, text)
         awaitSocket().sendText(preparedText, true)
-        onMessage(preparedText.toByteArray(), true, Direction.SECOND, eventID)
+        onMessage(preparedText.toByteArray(), true, SECOND, eventId)
     }
 
-    override fun sendBinary(data: ByteArray, eventID: EventID?) = lock.withLock {
+    override fun sendBinary(data: ByteArray, eventId: EventID?) = lock.withLock {
         logger.debug { "Sending binary: ${data.toBase64()}" }
         val preparedData = handler.prepareBinary(this, data)
         awaitSocket().sendBinary(ByteBuffer.wrap(preparedData), true)
-        onMessage(preparedData, false, Direction.SECOND, eventID)
+        onMessage(preparedData, false, SECOND, eventId)
     }
 
     override fun sendPing(message: ByteArray): Unit = lock.withLock {
@@ -94,7 +96,7 @@ class WebSocketClient(
         if (last) {
             val message = if (textFrames.isEmpty()) frame else textFrames.joinToString("")
             handler.onText(this, message)
-            onMessage(message.toByteArray(), true, Direction.FIRST, null)
+            onMessage(message.toByteArray(), true, FIRST, null)
             textFrames.clear()
         }
 
@@ -115,7 +117,7 @@ class WebSocketClient(
         if (last) {
             val message = if (binaryFrames.isEmpty()) frame else binaryFrames.reduce(ByteArray::plus)
             handler.onBinary(this, message)
-            onMessage(message, true, Direction.FIRST, null)
+            onMessage(message, true, FIRST, null)
             binaryFrames.clear()
         }
 

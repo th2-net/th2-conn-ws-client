@@ -124,21 +124,21 @@ fun run(
     val outgoingSequence = createSequence()
 
     //TODO: add batching (by size or time)
-    val onMessage = { message: ByteArray, textual: Boolean, direction: Direction, eventID: EventID? ->
-        eventID?.let {
+    val onMessage = { message: ByteArray, textual: Boolean, direction: Direction, eventId: EventID? ->
+        eventId?.let {
             eventRouter.storeEvent(Event.start().apply {
                 endTimestamp()
-                name("Message was successfully sent")
+                name("Message was successfully processed")
                 type("Info")
                 status(Event.Status.PASSED)
                 if (textual) {
                     bodyData(EventUtils.createMessageBean(message.decodeToString()))
                 }
-            }, eventID.id)
+            }, eventId.id)
         }
         val sequence = if (direction == Direction.FIRST) incomingSequence else outgoingSequence
         val attribute = if (direction == Direction.FIRST) QueueAttribute.FIRST else QueueAttribute.SECOND
-        messageRouter.send(message.toBatch(connectionId, direction, sequence(), eventID), attribute.toString())
+        messageRouter.send(message.toBatch(connectionId, direction, sequence(), eventId), attribute.toString())
     }
 
     val onEvent = { cause: Throwable?, message: () -> String ->
@@ -163,10 +163,9 @@ fun run(
         groupBatch.groupsList.forEach { group ->
             group.runCatching {
                 require(messagesCount == 1) { "Message group contains more than 1 message" }
-                messagesList[0].let {
-                    require(it.hasRawMessage()) { "Message in the group is not a raw message" }
-                    settings.frameType.send(client, it.rawMessage.body.toByteArray(), it.rawMessage.parentEventId)
-                }
+                val message = messagesList[0]
+                require(message.hasRawMessage()) { "Message in the group is not a raw message" }
+                settings.frameType.send(client, message.rawMessage.body.toByteArray(), message.rawMessage.parentEventId)
             }.recoverCatching {
                 LOGGER.error(it) { "Failed to handle message group: ${group.toPrettyString()}" }
                 eventRouter.storeEvent(rootEventId, "Failed to handle message group: ${group.toPrettyString()}", "Error", it)
@@ -208,13 +207,13 @@ data class Settings(
 ) {
     enum class FrameType {
         TEXT {
-            override fun send(client: IClient, data: ByteArray, eventID: EventID?) = client.sendText(data.toString(UTF_8), eventID)
+            override fun send(client: IClient, data: ByteArray, eventId: EventID?) = client.sendText(data.toString(UTF_8), eventId)
         },
         BINARY {
-            override fun send(client: IClient, data: ByteArray, eventID: EventID?) = client.sendBinary(data, eventID)
+            override fun send(client: IClient, data: ByteArray, eventId: EventID?) = client.sendBinary(data, eventId)
         };
 
-        abstract fun send(client: IClient, data: ByteArray, eventID: EventID?)
+        abstract fun send(client: IClient, data: ByteArray, eventId: EventID?)
     }
 }
 
