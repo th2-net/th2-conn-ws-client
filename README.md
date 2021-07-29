@@ -101,6 +101,11 @@ spec:
 
 ## Changelog
 
+### v0.3.0
+
+#### Added
+* ability to send data before disconnect
+
 ### v0.2.0
 
 #### Added
