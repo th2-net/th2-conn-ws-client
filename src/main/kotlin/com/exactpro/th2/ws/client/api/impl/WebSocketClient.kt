@@ -188,23 +188,19 @@ class WebSocketClient(
 
         socket.runCatching {
             if (isOutputClosed) {
-                isRunning = false
                 logger.warn { "Trying to close socket abruptly" }
                 abort()
             } else {
                 logger.info { "Trying to close socket gracefully" }
-                handler.runCatching {
-                    preClose(this@WebSocketClient)
-                }.onFailure {
+                this@WebSocketClient.runCatching(handler::preClose).onFailure {
                     onError(it) { "Failed to handle preClose event" }
                 }
-                isRunning = false
                 sendClose(WebSocket.NORMAL_CLOSURE, "")
             }
         }.onFailure {
             logger.error(it) { "Failed to close socket" }
         }
-
+        isRunning = false
         onInfo { "Stopped client" }
     }
 
