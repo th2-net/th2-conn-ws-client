@@ -104,7 +104,7 @@ spec:
 ### v0.3.0
 
 #### Added
-* ability to send data before disconnect
+* ability to send data before the WebSocket client is stopped
 
 ### v0.2.0
 
