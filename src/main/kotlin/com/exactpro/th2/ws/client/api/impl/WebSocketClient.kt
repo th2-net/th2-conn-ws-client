@@ -195,7 +195,9 @@ class WebSocketClient(
             } else {
                 logger.info { "Trying to close socket gracefully" }
 
-                handler.runCatching(IHandler::preClose).onFailure {
+                handler.runCatching {
+                    preClose(this@WebSocketClient)
+                }.onFailure {
                     onError(it) { "Failed to handle preClose event" }
                 }
 

@@ -29,7 +29,7 @@ interface IHandler : AutoCloseable {
     fun onPong(client: IClient, data: ByteArray) {}
     fun onClose(statusCode: Int, reason: String) {}
     fun onError(error: Throwable) {}
-    fun preClose() {}
+    fun preClose(client: IClient) {}
     fun prepareText(client: IClient, text: String): String = text
     fun prepareBinary(client: IClient, data: ByteArray): ByteArray = data
     override fun close() {}
