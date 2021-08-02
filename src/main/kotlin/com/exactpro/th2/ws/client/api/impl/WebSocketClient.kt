@@ -74,7 +74,7 @@ class WebSocketClient(
         onMessage(preparedData, false, SECOND)
     }
 
-    override fun sendPing(message: ByteArray): Unit = lock.withLock {
+    override fun sendPing(message: ByteArray) {
         logger.debug { "Sending ping: ${message.toBase64()}" }
         awaitSocket().sendPing(ByteBuffer.wrap(message))
     }
