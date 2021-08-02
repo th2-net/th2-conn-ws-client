@@ -42,28 +42,32 @@ class WebSocketClient(
     private val textFrames = mutableListOf<String>()
     private val binaryFrames = mutableListOf<ByteArray>()
     private val lock = ReentrantLock()
-    private lateinit var socket: WebSocket
+    @Volatile private lateinit var socket: WebSocket
 
     @Volatile var isRunning: Boolean = false
         private set
 
     private fun awaitSocket(): WebSocket {
-        when {
-            !isRunning -> start()
-            !::socket.isInitialized || socket.isOutputClosed -> connect()
+        if (!isRunning) start()
+
+        while (!::socket.isInitialized || socket.isOutputClosed) {
+            when {
+                isRunning -> Thread.sleep(1)
+                else -> return awaitSocket()
+            }
         }
 
         return socket
     }
 
-    override fun sendText(text: String) = lock.withLock {
+    override fun sendText(text: String) {
         logger.debug { "Sending text: $text" }
         val preparedText = handler.prepareText(this, text)
         awaitSocket().sendText(preparedText, true)
         onMessage(preparedText.toByteArray(), true, SECOND)
     }
 
-    override fun sendBinary(data: ByteArray) = lock.withLock {
+    override fun sendBinary(data: ByteArray) {
         logger.debug { "Sending binary: ${data.toBase64()}" }
         val preparedData = handler.prepareBinary(this, data)
         awaitSocket().sendBinary(ByteBuffer.wrap(preparedData), true)
@@ -77,6 +81,7 @@ class WebSocketClient(
 
     override fun onOpen(socket: WebSocket) = try {
         onInfo { "Connected to: $uri" }
+        this.socket = socket
         handler.onOpen(this)
         socket.request(1)
     } catch (e: Exception) {
@@ -208,9 +213,9 @@ class WebSocketClient(
         onInfo { "Stopped client" }
     }
 
-    private fun connect() = lock.withLock {
+    private fun connect(): Unit = lock.withLock {
         if (!isRunning) return
-        this.socket = createSocket()
+        createSocket()
     }
 
     private fun createSocket(
