@@ -1,4 +1,4 @@
-# WebSocket Client v0.2.0
+# WebSocket Client v0.2.1
 
 This microservice allows sending and receiving messages via WebSocket protocol
 
@@ -69,7 +69,7 @@ metadata:
   name: ws-client
 spec:
   image-name: ghcr.io/th2-net/th2-conn-ws-client
-  image-version: 0.2.0
+  image-version: 0.2.1
   custom-config:
     uri: wss://echo.websocket.org
     sessionAlias: api_session
@@ -101,9 +101,15 @@ spec:
 
 ## Changelog
 
+### v0.2.1
+
+#### Fixed:
+
+* deadlock when trying to send a message from `IHandler.onOpen`
+
 ### v0.2.0
 
-#### Added
+#### Added:
 
 * a new `preOpen` method that allows the handler to adjust some client's settings
 * `DefaultHandler` has the parameter to specify default headers for HTTP handshake
