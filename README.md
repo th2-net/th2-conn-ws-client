@@ -104,7 +104,7 @@ spec:
 ### v0.3.0
 
 #### Added
-* ability to send data before the WebSocket client is stopped
+*`IHandler.preClose(IClient)` method which allows to do something before connection is gracefully closed (e.g. send a message)
 
 ### v0.2.0
 
