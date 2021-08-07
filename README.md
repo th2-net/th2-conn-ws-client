@@ -1,4 +1,4 @@
-# WebSocket Client v0.3.0
+# WebSocket Client v0.2.0
 
 This microservice allows sending and receiving messages via WebSocket protocol
 
@@ -69,7 +69,7 @@ metadata:
   name: ws-client
 spec:
   image-name: ghcr.io/th2-net/th2-conn-ws-client
-  image-version: 0.3.0
+  image-version: 0.2.0
   custom-config:
     uri: wss://echo.websocket.org
     sessionAlias: api_session
@@ -107,6 +107,12 @@ spec:
 
 * `parentEventId` will stay the same in reports of messages as one that was received from th2 flow
 * Event have description filled with sent message (only textual)
+
+### v0.2.1
+
+#### Fixed:
+
+* deadlock when trying to send a message from `IHandler.onOpen`
 
 ### v0.2.0
 
