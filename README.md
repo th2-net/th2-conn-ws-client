@@ -105,7 +105,7 @@ spec:
 
 #### Added
 
-* `parentEventId` will stay the same in reports of messages as one that was received from th2 flow
+* retain original `parentEventId` when storing an outgoing message
 * Event have description filled with sent message (only textual)
 
 ### v0.2.1
