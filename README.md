@@ -1,4 +1,4 @@
-# WebSocket Client v0.2.1
+# WebSocket Client v0.2.2
 
 This microservice allows sending and receiving messages via WebSocket protocol
 
@@ -100,6 +100,12 @@ spec:
 ```
 
 ## Changelog
+
+### v0.2.2
+
+#### Added:
+
+* cancel ping timer in case of close/error WS events
 
 ### v0.2.1
 

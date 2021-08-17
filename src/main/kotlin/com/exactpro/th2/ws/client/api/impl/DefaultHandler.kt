@@ -43,6 +43,10 @@ class DefaultHandler : IHandler {
         createTimer(client)
     }
 
+    override fun onError(error: Throwable) = synchronized(this, ::cancelTimer)
+
+    override fun onClose(statusCode: Int, reason: String) = synchronized(this, ::cancelTimer)
+
     override fun onPing(client: IClient, data: ByteArray) = synchronized(this) {
         cancelTimer()
         createTimer(client)
@@ -57,8 +61,10 @@ class DefaultHandler : IHandler {
     }
 
     private fun cancelTimer() {
-        timer.runCatching(Timer::cancel).onFailure {
-            logger.error(it) { "Failed to cancel existing ping timer" }
+        if (::timer.isInitialized) {
+            timer.runCatching(Timer::cancel).onFailure {
+                logger.error(it) { "Failed to cancel existing ping timer" }
+            }
         }
     }
 
