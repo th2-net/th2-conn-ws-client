@@ -48,9 +48,7 @@ fun ByteArray.toBatch(
     parentEventId: EventID?
 ): MessageGroupBatch = RawMessage.newBuilder().apply {
     this.body = ByteString.copyFrom(this@toBatch)
-    if (parentEventId!=null) {
-        this.parentEventIdBuilder.mergeFrom(parentEventId)
-    }
+    parentEventId?.let { this.parentEventId = it }
     this.metadataBuilder {
         this.timestamp = Instant.now().toTimestamp()
         this.idBuilder {
