@@ -177,14 +177,17 @@ class WebSocketClient(
             else -> {
                 onInfo { "Starting client" }
                 isRunning = true
-                connect()
+                runCatching(::connect).onFailure {
+                    isRunning = false
+                    throw IllegalStateException("Failed to connect", it)
+                }
                 onInfo { "Started client" }
             }
         }
     }
 
     fun stop() = lock.withLock {
-        if (!isRunning || !::socket.isInitialized) {
+        if (!isRunning) {
             onInfo { "Client is already stopped" }
             return
         }
