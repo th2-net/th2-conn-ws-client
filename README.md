@@ -1,4 +1,4 @@
-# WebSocket Client v0.2.3
+# WebSocket Client v0.2.4
 
 This microservice allows sending and receiving messages via WebSocket protocol
 
@@ -45,6 +45,7 @@ handlerSettings:
 
 * input queue with `subscribe` and `send` attributes for outgoing messages
 * output queue with `publish`, `first` (for incoming messages) or `second` (for outgoing messages) attributes
+* (**optional**) output queue with `publish`, `event` attributes for outgoing events
 
 ## Inputs/outputs
 
@@ -58,6 +59,22 @@ This service receives messages that will be sent via MQ as `MessageGroup`s, cont
 
 Incoming and outgoing messages are sent via MQ as `MessageGroup`s, containing a single `RawMessage` with a message body.
 
+## Events
+
+This section describes the events that can be produced by the service. You can use that information to trigger some actions on certain events.
+
+### Connected
+
+When the service is connected it will publish the event with 
+**name**=`Connected to: <url>` 
+and **type**=`Info`
+
+### Disconnected
+
+When the service is disconnected for some reason with will publish the event with
+**name**=`Disconnected from: <uri> - statusCode: <statusCode>, reason: <reason>`
+and **type**=`Info`
+
 ## Deployment via `infra-mgr`
 
 Here's an example of `infra-mgr` config required to deploy this service
@@ -69,7 +86,7 @@ metadata:
   name: ws-client
 spec:
   image-name: ghcr.io/th2-net/th2-conn-ws-client
-  image-version: 0.2.3
+  image-version: 0.2.4
   custom-config:
     uri: wss://echo.websocket.org
     sessionAlias: api_session
@@ -96,10 +113,23 @@ spec:
       attributes:
         - publish
         - first
-        - raw 
+        - raw
+# Optional pin for sending the events from the service to another box
+#    - name: service_events
+#      connection-type: mq
+#      attributes:
+#        - publish
+#        - event
 ```
 
 ## Changelog
+
+### v0.2.4
+
+#### Changed:
+
+* The common version is updated from 3.13.4 to 3.25.1
+* Events are published to all pins that match the requested attributes
 
 ### v0.2.3
 
