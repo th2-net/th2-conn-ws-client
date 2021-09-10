@@ -1,4 +1,4 @@
-# WebSocket Client v0.2.4
+# WebSocket Client v0.2.5
 
 This microservice allows sending and receiving messages via WebSocket protocol
 
@@ -71,7 +71,7 @@ and **type**=`Info`
 
 ### Disconnected
 
-When the service is disconnected for some reason with will publish the event with
+When the service is disconnected for some reason it will publish the event with
 **name**=`Disconnected from: <uri> - statusCode: <statusCode>, reason: <reason>`
 and **type**=`Info`
 
@@ -86,7 +86,7 @@ metadata:
   name: ws-client
 spec:
   image-name: ghcr.io/th2-net/th2-conn-ws-client
-  image-version: 0.2.4
+  image-version: 0.2.5
   custom-config:
     uri: wss://echo.websocket.org
     sessionAlias: api_session
@@ -123,6 +123,13 @@ spec:
 ```
 
 ## Changelog
+
+### v0.2.5
+
+#### Added:
+
+* reconnect if handling of event fails
+* ability to stop client during reconnect loop
 
 ### v0.2.4
 

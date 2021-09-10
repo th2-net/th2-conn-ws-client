@@ -79,17 +79,14 @@ class WebSocketClient(
         awaitSocket().sendPing(ByteBuffer.wrap(message))
     }
 
-    override fun onOpen(socket: WebSocket) = try {
+    override fun onOpen(socket: WebSocket) {
         onInfo { "Connected to: $uri" }
         this.socket = socket
         handler.onOpen(this)
         socket.request(1)
-    } catch (e: Exception) {
-        onError(e) { "Failed to handle onOpen event" }
-        socket.request(1)
     }
 
-    override fun onText(socket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? = try {
+    override fun onText(socket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
         val frame = data.toString()
         logger.debug { "onText(data: $frame, last: $last)" }
 
@@ -104,13 +101,10 @@ class WebSocketClient(
             textFrames.clear()
         }
 
-        onComplete(socket)
-    } catch (e: Exception) {
-        onError(e) { "Failed to handle onText event" }
-        onComplete(socket)
+        return onComplete(socket)
     }
 
-    override fun onBinary(socket: WebSocket, data: ByteBuffer, last: Boolean): CompletionStage<*>? = try {
+    override fun onBinary(socket: WebSocket, data: ByteBuffer, last: Boolean): CompletionStage<*>? {
         val frame = data.toByteArray()
         logger.debug { "onBinary(data: ${frame.toBase64()}, last: $last)" }
 
@@ -125,30 +119,21 @@ class WebSocketClient(
             binaryFrames.clear()
         }
 
-        onComplete(socket)
-    } catch (e: Exception) {
-        onError(e) { "Failed to handle onBinary event" }
-        onComplete(socket)
+        return onComplete(socket)
     }
 
-    override fun onPing(socket: WebSocket, message: ByteBuffer): CompletionStage<*>? = try {
+    override fun onPing(socket: WebSocket, message: ByteBuffer): CompletionStage<*>? {
         val data = message.toByteArray()
         logger.debug { "onPing(message: ${data.toBase64()})" }
         handler.onPing(this, data)
-        onComplete(socket)
-    } catch (e: Exception) {
-        onError(e) { "Failed to handle onPing event" }
-        onComplete(socket)
+        return onComplete(socket)
     }
 
-    override fun onPong(socket: WebSocket, message: ByteBuffer): CompletionStage<*>? = try {
+    override fun onPong(socket: WebSocket, message: ByteBuffer): CompletionStage<*>? {
         val data = message.toByteArray()
         logger.debug { "onPong(message: ${data.toBase64()})" }
         handler.onPong(this, data)
-        onComplete(socket)
-    } catch (e: Exception) {
-        onError(e) { "Failed to handle onPong event" }
-        onComplete(socket)
+        return onComplete(socket)
     }
 
     override fun onClose(socket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? = try {
@@ -186,60 +171,55 @@ class WebSocketClient(
         }
     }
 
-    fun stop() = lock.withLock {
+    fun stop() {
         if (!isRunning) {
-            onInfo { "Client is already stopped" }
+            onInfo { "Client is already stopped or is being stopped" }
             return
         }
 
-        onInfo { "Stopping client" }
+        isRunning = false
 
-        socket.runCatching {
-            isRunning = false
+        lock.withLock {
+            onInfo { "Stopping client" }
 
-            if (isOutputClosed) {
-                logger.warn { "Trying to close socket abruptly" }
-                abort()
-            } else {
-                logger.info { "Trying to close socket gracefully" }
-
-                handler.runCatching(IHandler::preClose).onFailure {
-                    onError(it) { "Failed to handle preClose event" }
+            socket.runCatching {
+                if (isOutputClosed) {
+                    logger.warn { "Trying to close socket abruptly" }
+                    abort()
+                } else {
+                    logger.info { "Trying to close socket gracefully" }
+                    handler.runCatching(IHandler::preClose).onFailure { onError(it) { "Failed to handle preClose event" } }
+                    sendClose(WebSocket.NORMAL_CLOSURE, "")
                 }
-
-                sendClose(WebSocket.NORMAL_CLOSURE, "")
+            }.onFailure {
+                logger.error(it) { "Failed to close socket" }
             }
-        }.onFailure {
-            logger.error(it) { "Failed to close socket" }
+
+            onInfo { "Stopped client" }
         }
-
-        onInfo { "Stopped client" }
     }
 
-    private fun connect(): Unit = lock.withLock {
-        if (!isRunning) return
-        createSocket()
-    }
+    private fun connect() = lock.withLock {
+        var delay = 0L
 
-    private fun createSocket(
-        reconnectDelay: Long = 1000,
-        maxReconnectDelay: Long = 60000
-    ): WebSocket {
-        textFrames.clear()
-        binaryFrames.clear()
+        while (isRunning) {
+            try {
+                textFrames.clear()
+                binaryFrames.clear()
 
-        return HttpClient.newHttpClient()
-            .newWebSocketBuilder()
-            .also {
-                handler.preOpen(WebSocketClientSettings(it))
+                HttpClient.newHttpClient()
+                    .newWebSocketBuilder()
+                    .also { handler.preOpen(WebSocketClientSettings(it)) }
+                    .buildAsync(uri, this)
+                    .get()
+
+                break
+            } catch (e: Exception) {
+                delay += 5000L
+                onError(e) { "Failed to connect to: $uri. Retrying in $delay ms" }
+                Thread.sleep(delay)
             }
-            .buildAsync(uri, this)
-            .exceptionally {
-                onError(it) { "Failed to connect to: $uri" }
-                Thread.sleep(reconnectDelay)
-                createSocket((reconnectDelay * 2).coerceAtMost(maxReconnectDelay))
-            }
-            .get()
+        }
     }
 
     private fun onInfo(message: () -> String) {
