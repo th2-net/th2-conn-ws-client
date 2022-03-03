@@ -102,6 +102,7 @@ spec:
       attributes:
         - subscribe
         - send
+        - raw
     - name: outgoing_messages
       connection-type: mq
       attributes:
