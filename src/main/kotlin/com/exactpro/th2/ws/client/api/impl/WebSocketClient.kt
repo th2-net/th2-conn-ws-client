@@ -206,11 +206,12 @@ class WebSocketClient(
             try {
                 textFrames.clear()
                 binaryFrames.clear()
+                val connectUri: URIBuilder = URIBuilder(uri.toASCIIString())
 
                 HttpClient.newHttpClient()
                     .newWebSocketBuilder()
-                    .also { handler.preOpen(WebSocketClientSettings(it)) }
-                    .buildAsync(uri, this)
+                    .also { handler.preOpen(WebSocketClientSettings(it, connectUri)) }
+                    .buildAsync(connectUri.build(), this)
                     .get()
 
                 break
@@ -237,9 +238,29 @@ class WebSocketClient(
         return null
     }
 
-    private class WebSocketClientSettings(private val builder: WebSocket.Builder) : IClientSettings {
+    private class WebSocketClientSettings(private val builder: WebSocket.Builder, private val uriBuilder: URIBuilder) : IClientSettings {
         override fun addHeader(name: String, value: String) {
             builder.header(name, value)
+        }
+
+        override fun addQueryParam(name: String, value: String) {
+            uriBuilder.addQueryParam(name, value)
+        }
+    }
+
+    private class URIBuilder(private val baseUri: String) {
+        private val queryBuilder: StringBuilder = StringBuilder("")
+
+        fun addQueryParam(name: String, value: String) {
+            queryBuilder.append("$name=$value&")
+        }
+
+        fun build(): URI {
+            queryBuilder.deleteCharAt(queryBuilder.length)
+            if(!baseUri.contains("?")) return URI("$baseUri?$queryBuilder")
+            if(!baseUri.endsWith("&") && !baseUri.endsWith("?"))
+                return URI("$baseUri&$queryBuilder")
+            return URI(baseUri + queryBuilder)
         }
     }
 
