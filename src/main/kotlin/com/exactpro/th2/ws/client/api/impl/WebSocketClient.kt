@@ -206,7 +206,7 @@ class WebSocketClient(
             try {
                 textFrames.clear()
                 binaryFrames.clear()
-                val connectUri: URIBuilder = URIBuilder(uri.toASCIIString())
+                val connectUri: URIBuilder = URIBuilder(uri.toString())
 
                 HttpClient.newHttpClient()
                     .newWebSocketBuilder()
