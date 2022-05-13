@@ -125,6 +125,11 @@ spec:
 
 ## Changelog
 
+### v0.2.6
+
+#### Added:
+* opportunity to add query params to uri from handler
+
 ### v0.2.5
 
 #### Added:
