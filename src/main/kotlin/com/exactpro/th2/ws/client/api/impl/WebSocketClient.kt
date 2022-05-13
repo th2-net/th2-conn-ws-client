@@ -24,6 +24,7 @@ import com.exactpro.th2.ws.client.api.IClientSettings
 import com.exactpro.th2.ws.client.api.IHandler
 import mu.KotlinLogging
 import java.net.URI
+import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.WebSocket
 import java.nio.ByteBuffer
@@ -201,23 +202,25 @@ class WebSocketClient(
 
     private fun connect() = lock.withLock {
         var delay = 0L
-
+        var settings: WebSocketClientSettings? = null
         while (isRunning) {
             try {
                 textFrames.clear()
                 binaryFrames.clear()
-                val connectUri: URIBuilder = URIBuilder(uri.toString())
 
                 HttpClient.newHttpClient()
                     .newWebSocketBuilder()
-                    .also { handler.preOpen(WebSocketClientSettings(it, connectUri)) }
-                    .buildAsync(connectUri.build(), this)
+                    .also {
+                        settings = WebSocketClientSettings(it, uri)
+                        handler.preOpen(settings!!)
+                    }
+                    .buildAsync(settings!!.uriBuilder?.build() ?: uri, this)
                     .get()
 
                 break
             } catch (e: Exception) {
                 delay += 5000L
-                onError(e) { "Failed to connect to: $uri. Retrying in $delay ms" }
+                onError(e) { "Failed to connect to: ${settings?.uriBuilder?.build() ?: uri}. Retrying in $delay ms" }
                 Thread.sleep(delay)
             }
         }
@@ -238,30 +241,28 @@ class WebSocketClient(
         return null
     }
 
-    private class WebSocketClientSettings(private val builder: WebSocket.Builder, private val uriBuilder: URIBuilder) : IClientSettings {
+    private class WebSocketClientSettings(private val builder: WebSocket.Builder, private val baseUri: URI) : IClientSettings {
+        var uriBuilder: URIBuilder? = null
         override fun addHeader(name: String, value: String) {
             builder.header(name, value)
         }
 
         override fun addQueryParam(name: String, value: String) {
-            uriBuilder.addQueryParam(name, value)
+            uriBuilder ?: run { uriBuilder = URIBuilder(baseUri) }
+            uriBuilder!!.addQueryParam(name, value)
         }
     }
 
-    private class URIBuilder(private val baseUri: String) {
-        private val queryBuilder: StringBuilder = StringBuilder("")
+    private class URIBuilder(uri: URI) {
+        private val builder: StringBuilder = StringBuilder(uri.toString())
+        private var hasQuery = uri.query != null
 
         fun addQueryParam(name: String, value: String) {
-            queryBuilder.append("$name=$value&")
+            if (hasQuery) builder.append('&') else builder.append('?')
+            builder.append("${URLEncoder.encode(name, "UTF-8")}=${URLEncoder.encode(value, "UTF-8")}") // add encoding
+            hasQuery = true
         }
-
-        fun build(): URI {
-            queryBuilder.deleteCharAt(queryBuilder.length)
-            if(!baseUri.contains("?")) return URI("$baseUri?$queryBuilder")
-            if(!baseUri.endsWith("&") && !baseUri.endsWith("?"))
-                return URI("$baseUri&$queryBuilder")
-            return URI(baseUri + queryBuilder)
-        }
+        fun build(): URI = URI(builder.toString())
     }
 
     companion object {
