@@ -202,25 +202,22 @@ class WebSocketClient(
 
     private fun connect() = lock.withLock {
         var delay = 0L
-        var settings: WebSocketClientSettings? = null
         while (isRunning) {
+            val settings = WebSocketClientSettings(uri)
             try {
                 textFrames.clear()
                 binaryFrames.clear()
 
                 HttpClient.newHttpClient()
                     .newWebSocketBuilder()
-                    .also {
-                        settings = WebSocketClientSettings(it, uri)
-                        handler.preOpen(settings!!)
-                    }
-                    .buildAsync(settings!!.uri, this)
+                    .also { settings.builder = it; handler.preOpen(settings) }
+                    .buildAsync(settings.uri, this)
                     .get()
 
                 break
             } catch (e: Exception) {
                 delay += 5000L
-                onError(e) { "Failed to connect to: ${settings?.uri ?: uri}. Retrying in $delay ms" }
+                onError(e) { "Failed to connect to: ${settings.uri}. Retrying in $delay ms" }
                 Thread.sleep(delay)
             }
         }
@@ -241,17 +238,18 @@ class WebSocketClient(
         return null
     }
 
-    private class WebSocketClientSettings(private val builder: WebSocket.Builder, private val baseUri: URI) : IClientSettings {
-        private var uriBuilder: URIBuilder? = null
-        val uri: URI get() = uriBuilder?.build() ?: baseUri
+    private class WebSocketClientSettings(private val baseUri: URI) : IClientSettings {
+        private var uriBuilder: URIBuilder = URIBuilder(baseUri)
+
+        lateinit var builder: WebSocket.Builder
+        val uri: URI get() = uriBuilder.build()
 
         override fun addHeader(name: String, value: String) {
             builder.header(name, value)
         }
 
         override fun addQueryParam(name: String, value: String) {
-            uriBuilder ?: run { uriBuilder = URIBuilder(baseUri) }
-            uriBuilder!!.addQueryParam(name, value)
+            uriBuilder.addQueryParam(name, value)
         }
     }
 
