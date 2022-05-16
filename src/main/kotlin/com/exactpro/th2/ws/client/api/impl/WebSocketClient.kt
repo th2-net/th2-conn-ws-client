@@ -214,13 +214,13 @@ class WebSocketClient(
                         settings = WebSocketClientSettings(it, uri)
                         handler.preOpen(settings!!)
                     }
-                    .buildAsync(settings!!.uriBuilder?.build() ?: uri, this)
+                    .buildAsync(settings!!.uri, this)
                     .get()
 
                 break
             } catch (e: Exception) {
                 delay += 5000L
-                onError(e) { "Failed to connect to: ${settings?.uriBuilder?.build() ?: uri}. Retrying in $delay ms" }
+                onError(e) { "Failed to connect to: ${settings?.uri ?: uri}. Retrying in $delay ms" }
                 Thread.sleep(delay)
             }
         }
@@ -242,7 +242,9 @@ class WebSocketClient(
     }
 
     private class WebSocketClientSettings(private val builder: WebSocket.Builder, private val baseUri: URI) : IClientSettings {
-        var uriBuilder: URIBuilder? = null
+        private var uriBuilder: URIBuilder? = null
+        val uri: URI get() = uriBuilder?.build() ?: baseUri
+
         override fun addHeader(name: String, value: String) {
             builder.header(name, value)
         }
