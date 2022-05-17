@@ -28,4 +28,10 @@ interface IClientSettings {
     fun addHeaders(name: String, values: Collection<String>) {
         values.forEach { addHeader(name, it) }
     }
+
+    fun addQueryParam(name: String, value: String)
+
+    fun addQueryParams(values: Map<String, String>) {
+        values.forEach { (key, value) -> addQueryParam(key, value) }
+    }
 }
