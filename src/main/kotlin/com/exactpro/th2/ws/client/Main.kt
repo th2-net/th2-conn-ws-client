@@ -131,7 +131,9 @@ fun run(
 
     val batcher = RawMessageBatcher(settings.maxBatchSize, settings.maxFlushTime, {
         it.metadataOrBuilder.id.direction
-    }, scheduledExecutorService, messageRouter::send)
+    }, scheduledExecutorService, messageRouter::send).also {
+        registerResource("Raw message batcher", it::close)
+    }
 
     val onMessage = { message: ByteArray, _: Boolean, direction: Direction ->
         batcher.onMessage(message.toRawMessage(
