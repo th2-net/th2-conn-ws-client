@@ -169,9 +169,8 @@ dependencies {
     implementation 'com.exactpro.th2:common-utils:0.0.1-dev-3014065584-SNAPSHOT'
     implementation 'com.exactpro.th2:grpc-conn:0.0.1'
 
-    implementation 'org.apache.logging.log4j:log4j-slf4j-impl'
-    implementation 'org.apache.logging.log4j:log4j-1.2-api'
-    implementation 'org.apache.logging.log4j:log4j-api'
+    implementation group: 'org.slf4j', name: 'slf4j-api', version: slf4j_version
+    implementation group: 'org.slf4j', name: 'slf4j-log4j12', version: slf4j_version
 
     implementation group: 'org.jetbrains.kotlin', name: 'kotlin-stdlib-jdk8', version: kotlin_version
     implementation group: 'org.jetbrains.kotlin', name: 'kotlin-reflect', version: kotlin_version
