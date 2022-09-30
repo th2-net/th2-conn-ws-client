@@ -28,9 +28,11 @@ import com.exactpro.th2.common.schema.factory.CommonFactory
 import com.exactpro.th2.common.schema.grpc.router.GrpcRouter
 import com.exactpro.th2.common.schema.message.MessageListener
 import com.exactpro.th2.common.schema.message.MessageRouter
+import com.exactpro.th2.common.schema.message.QueueAttribute
 import com.exactpro.th2.common.schema.message.storeEvent
 import com.exactpro.th2.common.utils.event.EventBatcher
 import com.exactpro.th2.common.utils.message.RawMessageBatcher
+import com.exactpro.th2.common.utils.message.direction
 import com.exactpro.th2.ws.client.Settings.FrameType.TEXT
 import com.exactpro.th2.ws.client.api.IClient
 import com.exactpro.th2.ws.client.api.IHandler
@@ -131,7 +133,15 @@ fun run(
 
     val batcher = RawMessageBatcher(settings.maxBatchSize, settings.maxFlushTime, {
         it.metadataOrBuilder.id.direction
-    }, scheduledExecutorService, messageRouter::send).also {
+    }, scheduledExecutorService, {
+        when (it.groupsList.first().direction) {
+            Direction.FIRST -> messageRouter.send(it, QueueAttribute.FIRST.value)
+            Direction.SECOND -> messageRouter.send(it, QueueAttribute.SECOND.value)
+            else -> error("Unrecognized direction")
+        }
+    }) {
+        LOGGER.error(it) { "Can't send message group batch due inner error" }
+    }.also {
         registerResource("Raw message batcher", it::close)
     }
 

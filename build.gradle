@@ -166,7 +166,7 @@ dependencies {
     api platform('com.exactpro.th2:bom:3.1.0')
 
     implementation 'com.exactpro.th2:common:3.40.0'
-    implementation 'com.exactpro.th2:common-utils:0.0.1-dev-3014065584-SNAPSHOT'
+    implementation 'com.exactpro.th2:common-utils:0.0.1-dev-3139295943-SNAPSHOT'
     implementation 'com.exactpro.th2:grpc-conn:0.0.1'
 
     implementation group: 'org.slf4j', name: 'slf4j-api', version: slf4j_version
