@@ -163,9 +163,9 @@ clean {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:4.0.1')
+    api platform('com.exactpro.th2:bom:3.1.0')
 
-    implementation 'com.exactpro.th2:common:3.41.0'
+    implementation "com.exactpro.th2:common:3.37.2"
     implementation 'com.exactpro.th2:common-utils:0.0.1-dev-3139295943-SNAPSHOT'
     implementation 'com.exactpro.th2:grpc-conn:0.0.1'
 
