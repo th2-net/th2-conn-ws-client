@@ -19,6 +19,7 @@
 package com.exactpro.th2.ws.client
 
 import com.exactpro.th2.common.event.Event
+import com.exactpro.th2.common.event.EventUtils
 import com.exactpro.th2.common.grpc.ConnectionID
 import com.exactpro.th2.common.grpc.Direction
 import com.exactpro.th2.common.grpc.EventBatch
@@ -29,6 +30,10 @@ import com.exactpro.th2.common.schema.message.MessageListener
 import com.exactpro.th2.common.schema.message.MessageRouter
 import com.exactpro.th2.common.schema.message.QueueAttribute
 import com.exactpro.th2.common.schema.message.storeEvent
+import com.exactpro.th2.common.utils.event.EventBatcher
+import com.exactpro.th2.common.utils.message.RAW_DIRECTION_SELECTOR
+import com.exactpro.th2.common.utils.message.RawMessageBatcher
+import com.exactpro.th2.common.utils.message.direction
 import com.exactpro.th2.ws.client.Settings.FrameType.TEXT
 import com.exactpro.th2.ws.client.api.IClient
 import com.exactpro.th2.ws.client.api.IHandler
@@ -37,16 +42,18 @@ import com.exactpro.th2.ws.client.api.IHandlerSettingsTypeProvider
 import com.exactpro.th2.ws.client.api.impl.DefaultHandler
 import com.exactpro.th2.ws.client.api.impl.DefaultHandlerSettingsTypeProvider
 import com.exactpro.th2.ws.client.api.impl.WebSocketClient
-import com.exactpro.th2.ws.client.util.toBatch
 import com.exactpro.th2.ws.client.util.toPrettyString
+import com.exactpro.th2.ws.client.util.toRawMessage
 import com.fasterxml.jackson.databind.json.JsonMapper
 import com.fasterxml.jackson.databind.module.SimpleModule
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import mu.KotlinLogging
+import org.apache.commons.lang3.exception.ExceptionUtils
 import java.net.URI
 import java.time.Instant
 import java.util.ServiceLoader
 import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
@@ -121,16 +128,36 @@ fun run(
     val incomingSequence = createSequence()
     val outgoingSequence = createSequence()
 
-    //TODO: add batching (by size or time)
+    val scheduledExecutorService = Executors.newScheduledThreadPool(1).also {
+        registerResource("Batcher scheduled executor", it::shutdownNow)
+    }
+
+    val batcher = RawMessageBatcher(settings.maxBatchSize, settings.maxFlushTime, RAW_DIRECTION_SELECTOR, scheduledExecutorService, { throwable: Throwable ->
+        LOGGER.error(throwable) { "Can't send message group batch due inner error" }
+    }) {
+        when (it.groupsList.first().direction) {
+            Direction.FIRST -> messageRouter.send(it, QueueAttribute.FIRST.value)
+            Direction.SECOND -> messageRouter.send(it, QueueAttribute.SECOND.value)
+            else -> error("Unrecognized direction")
+        }
+    }.also {
+        registerResource("Raw message batcher", it::close)
+    }
+
     val onMessage = { message: ByteArray, _: Boolean, direction: Direction ->
-        val sequence = if (direction == Direction.FIRST) incomingSequence else outgoingSequence
-        val attribute = if (direction == Direction.FIRST) QueueAttribute.FIRST else QueueAttribute.SECOND
-        messageRouter.send(message.toBatch(connectionId, direction, sequence()), attribute.toString())
+        batcher.onMessage(message.toRawMessage(
+            connectionId,
+            direction,
+            (if (direction == Direction.FIRST) incomingSequence else outgoingSequence)()
+        ))
+    }
+
+    val eventBatcher = EventBatcher(settings.maxBatchSize, settings.maxFlushTime, scheduledExecutorService, eventRouter::send).also {
+        registerResource("Event batcher", it::close)
     }
 
     val onEvent = { cause: Throwable?, message: () -> String ->
-        val type = if (cause != null) "Error" else "Info"
-        eventRouter.storeEvent(rootEventId, message(), type, cause)
+        eventBatcher.storeEvent(message(), cause, rootEventId)
     }
 
     val client = WebSocketClient(
@@ -190,7 +217,9 @@ data class Settings(
     val handlerSettings: IHandlerSettings? = null,
     val grpcStartControl: Boolean = false,
     val autoStart: Boolean = true,
-    val autoStopAfter: Int = 0
+    val autoStopAfter: Int = 0,
+    val maxBatchSize: Int = 1000,
+    val maxFlushTime: Long = 1000
 ) {
     enum class FrameType {
         TEXT {
@@ -218,3 +247,22 @@ private inline fun <reified T> load(defaultImpl: Class<out T>): T {
 private fun createSequence(): () -> Long = Instant.now().run {
     AtomicLong(epochSecond * SECONDS.toNanos(1) + nano)
 }::incrementAndGet
+
+fun EventBatcher.storeEvent(name: String, cause: Throwable?, parentEventId: String) {
+    val event = createEvent(name, cause)
+    onEvent(event.toProtoEvent(parentEventId))
+}
+
+fun createEvent(
+    name: String,
+    cause: Throwable? = null
+): Event = Event.start().apply {
+    endTimestamp()
+    name(name)
+    type(if (cause != null) "Error" else "Info")
+    status(if (cause != null) Event.Status.FAILED else Event.Status.PASSED)
+
+    generateSequence(cause, Throwable::cause).forEach { error ->
+        bodyData(EventUtils.createMessageBean(ExceptionUtils.getMessage(error)))
+    }
+}

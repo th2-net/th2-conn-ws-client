@@ -18,11 +18,8 @@
 
 package com.exactpro.th2.ws.client.util
 
-import com.exactpro.th2.common.grpc.AnyMessage
 import com.exactpro.th2.common.grpc.ConnectionID
 import com.exactpro.th2.common.grpc.Direction
-import com.exactpro.th2.common.grpc.MessageGroup
-import com.exactpro.th2.common.grpc.MessageGroupBatch
 import com.exactpro.th2.common.grpc.RawMessage
 import com.exactpro.th2.common.message.toTimestamp
 import com.google.protobuf.ByteString
@@ -35,17 +32,12 @@ private inline operator fun <T : Builder> T.invoke(block: T.() -> Unit) = apply(
 
 fun MessageOrBuilder.toPrettyString(): String = JsonFormat.printer().omittingInsignificantWhitespace().includingDefaultValueFields().print(this)
 
-private fun RawMessage.Builder.toBatch() = run(AnyMessage.newBuilder()::setRawMessage)
-    .run(MessageGroup.newBuilder()::addMessages)
-    .run(MessageGroupBatch.newBuilder()::addGroups)
-    .build()
-
-fun ByteArray.toBatch(
+fun ByteArray.toRawMessage(
     connectionId: ConnectionID,
     direction: Direction,
     sequence: Long,
-): MessageGroupBatch = RawMessage.newBuilder().apply {
-    this.body = ByteString.copyFrom(this@toBatch)
+): RawMessage.Builder = RawMessage.newBuilder().apply {
+    this.body = ByteString.copyFrom(this@toRawMessage)
     this.metadataBuilder {
         this.timestamp = Instant.now().toTimestamp()
         this.idBuilder {
@@ -54,4 +46,4 @@ fun ByteArray.toBatch(
             this.sequence = sequence
         }
     }
-}.toBatch()
+}
