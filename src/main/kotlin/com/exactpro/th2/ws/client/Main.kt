@@ -157,7 +157,7 @@ fun run(
         ) { batch ->
             transportMessageRouter.send(batch)
         }.apply {
-            registerResource("message-batcher", ::close)
+            registerResource("transport-message-batcher", ::close)
         }
 
         fun(message: ByteArray, _: Boolean, direction: Direction) {
