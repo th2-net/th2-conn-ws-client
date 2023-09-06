@@ -14,7 +14,7 @@ The main configuration is done by changing following properties:
 + **grpcStartControl** - enables start/stop control via [gRPC service](https://github.com/th2-net/th2-grpc-conn/blob/master/src/main/proto/th2_grpc_conn/conn.proto#L24) (`false` by default)
 + **autoStart** - start service automatically (`true` by default and if `startControl` is `false`)
 + **autoStopAfter** - stop after N seconds if the service was started automatically prior to send (`0` by default which means disabled)
-+ **maxBatchSize** - max size of outgoing message batch (`1000` by default)
++ **maxBatchSize** - max size of outgoing message batch (`100` by default)
 + **maxFlushTime** - max message batch flush time (`1000` by default)
 + **useTransport** - use th2 transport or protobuf protocol to publish incoming/outgoing messages (`true` by default)
 
