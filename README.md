@@ -1,4 +1,4 @@
-# WebSocket Client v0.3.1
+# WebSocket Client v0.4.0
 
 This microservice allows sending and receiving messages via WebSocket protocol
 
@@ -8,11 +8,15 @@ The main configuration is done by changing following properties:
 
 + **uri** - connection URI
 + **frameType** - outgoing WebSocket frame type, can be either `TEXT` or `BINARY` (`TEXT` by default)
++ **sessionGroup** - session group for incoming/outgoing th2 messages (equal to session alias by default)
 + **sessionAlias** - session alias for incoming/outgoing th2 messages (e.g. `ws_api`)
 + **handlerSettings** - WebSocket event handler settings
 + **grpcStartControl** - enables start/stop control via [gRPC service](https://github.com/th2-net/th2-grpc-conn/blob/master/src/main/proto/th2_grpc_conn/conn.proto#L24) (`false` by default)
 + **autoStart** - start service automatically (`true` by default and if `startControl` is `false`)
 + **autoStopAfter** - stop after N seconds if the service was started automatically prior to send (`0` by default which means disabled)
++ **maxBatchSize** - max size of outgoing message batch (`1000` by default)
++ **maxFlushTime** - max message batch flush time (`1000` by default)
++ **useTransport** - use th2 transport or protobuf protocol to publish incoming/outgoing messages (`true` by default)
 
 Service will also automatically connect prior to message send if it wasn't connected
 
@@ -43,9 +47,11 @@ handlerSettings:
 
 ### MQ pins
 
-* input queue with `subscribe` and `send` attributes for outgoing messages
-* output queue with `publish`, `first` (for incoming messages) or `second` (for outgoing messages) attributes
-* (**optional**) output queue with `publish`, `event` attributes for outgoing events
+* least one of `to_send_via_protobuf` with [`subscribe`, `send`, `raw`] attributes 
+  or `to_send_via_transport` with [`subscribe`, `send`, `transport-group`] attributes pins is required, 
+  it's mean that conn can consume messages via one or both protocols.
+* `outgoing_messages_via_protobuf` with [`publish`, `raw`] pin are required when useTransport is `false`
+* `outgoing_messages_via_transport` with [`publish`, `transport-group`] pin are required when useTransport is `true`
 
 ## Inputs/outputs
 
@@ -97,33 +103,33 @@ spec:
       pingInterval: 30000
   type: th2-conn
   pins:
-    - name: to_send
+    - name: to_send_via_transport
       connection-type: mq
       attributes:
         - subscribe
         - send
-        - raw
-    - name: outgoing_messages
+        - transport-group
+    - name: outgoing_messages_via_transport
       connection-type: mq
       attributes:
         - publish
-        - second
-        - raw
-    - name: incoming_messages
-      connection-type: mq
-      attributes:
-        - publish
-        - first
-        - raw
-# Optional pin for sending the events from the service to another box
-#    - name: service_events
-#      connection-type: mq
-#      attributes:
-#        - publish
-#        - event
+        - transport-group
 ```
 
 ## Changelog
+
+### v0.4.0
+
+* added support for th2 transport protocol
+
+#### Updated:
+* updated bom: `4.5.0-dev`
+* updated common: `5.4.1-dev`
+* updated grpc-conn: `0.1.0-dev`
+* updated kotlin: `1.8.22`
+
+#### Added:
+* updated common-utils: `2.2.0-dev`
 
 ### v0.3.1
 

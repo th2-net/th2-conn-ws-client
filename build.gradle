@@ -4,12 +4,8 @@ plugins {
     id 'application'
     id 'com.palantir.docker' version '0.25.0'
     id 'org.jetbrains.kotlin.jvm' version "${kotlin_version}"
-    id "com.github.harbby.gradle.serviceloader" version '1.1.5'
-    id 'io.github.gradle-nexus.publish-plugin' version '1.0.0'
-}
-
-ext {
-    sharedDir = file("${project.rootDir}/shared")
+    id "com.github.harbby.gradle.serviceloader" version '1.1.8'
+    id 'io.github.gradle-nexus.publish-plugin' version '1.3.0'
 }
 
 group = 'com.exactpro.th2'
@@ -19,11 +15,6 @@ sourceCompatibility = 11
 targetCompatibility = 11
 
 repositories {
-    maven {
-        name 'MavenLocal'
-        url sharedDir
-    }
-
     mavenCentral()
 
     maven {
@@ -36,7 +27,7 @@ repositories {
 
     mavenLocal()
 
-    configurations.all {
+    configurations.configureEach {
         resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
         resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
     }
@@ -62,7 +53,7 @@ java {
 }
 
 // conditionals for publications
-tasks.withType(PublishToMavenRepository) {
+tasks.withType(PublishToMavenRepository).configureEach {
     onlyIf {
         (repository == publishing.repositories.nexusRepository &&
                 project.hasProperty('nexus_user') &&
@@ -70,19 +61,18 @@ tasks.withType(PublishToMavenRepository) {
                 project.hasProperty('nexus_url')) ||
                 (repository == publishing.repositories.sonatype &&
                         project.hasProperty('sonatypeUsername') &&
-                        project.hasProperty('sonatypePassword')) ||
-                (repository == publishing.repositories.localRepo)
+                        project.hasProperty('sonatypePassword'))
     }
 }
 
-tasks.withType(Sign) {
+tasks.withType(Sign).configureEach {
     onlyIf {
         project.hasProperty('signingKey') && project.hasProperty('signingPassword')
     }
 }
 
 // disable running task 'initializeSonatypeStagingRepository' on a gitlab
-tasks.whenTaskAdded { task ->
+tasks.configureEach { task ->
     if (task.name == 'initializeSonatypeStagingRepository' &&
             !(project.hasProperty('sonatypeUsername') && project.hasProperty('sonatypePassword'))
     ) {
@@ -124,11 +114,6 @@ publishing {
     }
 
     repositories {
-        maven {
-            name = 'localRepo'
-            url = sharedDir
-        }
-
         //Nexus repo to publish from gitlab
         maven {
             name = 'nexusRepository'
@@ -152,32 +137,27 @@ nexusPublishing {
 }
 
 signing {
-    def signingKey = findProperty("signingKey")
-    def signingPassword = findProperty("signingPassword")
+    String signingKey = findProperty("signingKey")
+    String signingPassword = findProperty("signingPassword")
     useInMemoryPgpKeys(signingKey, signingPassword)
     sign publishing.publications.mavenJava
 }
 
-clean {
-    delete sharedDir
-}
-
 dependencies {
-    api platform('com.exactpro.th2:bom:3.1.0')
+    api platform('com.exactpro.th2:bom:4.5.0')
 
-    implementation 'com.exactpro.th2:common:3.40.0'
-    implementation 'com.exactpro.th2:grpc-conn:0.0.1'
+    implementation 'com.exactpro.th2:common:5.4.1-dev'
+    implementation 'com.exactpro.th2:common-utils:2.2.0-dev'
+    implementation 'com.exactpro.th2:grpc-conn:0.1.0-TS-1663-+'
 
-    implementation 'org.slf4j:slf4j-log4j12'
     implementation 'org.slf4j:slf4j-api'
 
-    implementation group: 'org.jetbrains.kotlin', name: 'kotlin-stdlib-jdk8', version: kotlin_version
     implementation group: 'org.jetbrains.kotlin', name: 'kotlin-reflect', version: kotlin_version
-    implementation group: 'io.github.microutils', name: 'kotlin-logging', version: '1.7.9'
-    implementation group: 'com.fasterxml.jackson.module', name: 'jackson-module-kotlin', version: '2.11.2'
+    implementation group: 'io.github.microutils', name: 'kotlin-logging', version: '3.0.5'
+    implementation group: 'com.fasterxml.jackson.module', name: 'jackson-module-kotlin', version: '2.15.2'
 
     testImplementation group: 'org.jetbrains.kotlin', name: 'kotlin-test-junit5', version: kotlin_version
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.7.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
 }
 
 application {
@@ -201,14 +181,12 @@ docker {
 compileKotlin {
     kotlinOptions {
         jvmTarget = "11"
-        freeCompilerArgs += "-XXLanguage:+UnitConversion"
     }
 }
 
 compileTestKotlin {
     kotlinOptions {
         jvmTarget = "11"
-        freeCompilerArgs += "-XXLanguage:+UnitConversion"
     }
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2021-2023 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,17 +18,23 @@
 
 package com.exactpro.th2.ws.client
 
-import com.exactpro.th2.common.event.Event
 import com.exactpro.th2.common.grpc.ConnectionID
 import com.exactpro.th2.common.grpc.Direction
 import com.exactpro.th2.common.grpc.EventBatch
+import com.exactpro.th2.common.grpc.EventID
 import com.exactpro.th2.common.grpc.MessageGroupBatch
 import com.exactpro.th2.common.schema.factory.CommonFactory
 import com.exactpro.th2.common.schema.grpc.router.GrpcRouter
 import com.exactpro.th2.common.schema.message.MessageListener
 import com.exactpro.th2.common.schema.message.MessageRouter
 import com.exactpro.th2.common.schema.message.QueueAttribute
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.GroupBatch
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.RawMessage
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.toByteArray
 import com.exactpro.th2.common.schema.message.storeEvent
+import com.exactpro.th2.common.utils.message.RAW_GROUP_SELECTOR
+import com.exactpro.th2.common.utils.message.transport.MessageBatcher.Companion.GROUP_SELECTOR
+import com.exactpro.th2.common.utils.shutdownGracefully
 import com.exactpro.th2.ws.client.Settings.FrameType.TEXT
 import com.exactpro.th2.ws.client.api.IClient
 import com.exactpro.th2.ws.client.api.IHandler
@@ -37,16 +43,19 @@ import com.exactpro.th2.ws.client.api.IHandlerSettingsTypeProvider
 import com.exactpro.th2.ws.client.api.impl.DefaultHandler
 import com.exactpro.th2.ws.client.api.impl.DefaultHandlerSettingsTypeProvider
 import com.exactpro.th2.ws.client.api.impl.WebSocketClient
-import com.exactpro.th2.ws.client.util.toBatch
 import com.exactpro.th2.ws.client.util.toPrettyString
+import com.exactpro.th2.ws.client.util.toProto
+import com.exactpro.th2.ws.client.util.toTransport
 import com.fasterxml.jackson.databind.json.JsonMapper
 import com.fasterxml.jackson.databind.module.SimpleModule
+import com.fasterxml.jackson.module.kotlin.KotlinFeature
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import mu.KotlinLogging
 import java.net.URI
 import java.time.Instant
 import java.util.ServiceLoader
 import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
@@ -54,6 +63,8 @@ import kotlin.concurrent.thread
 import kotlin.concurrent.withLock
 import kotlin.system.exitProcess
 import kotlin.text.Charsets.UTF_8
+import com.exactpro.th2.common.utils.message.RawMessageBatcher as ProtoMessageBatcher
+import com.exactpro.th2.common.utils.message.transport.MessageBatcher as TransportMessageBatcher
 
 private val LOGGER = KotlinLogging.logger { }
 private const val INPUT_QUEUE_ATTRIBUTE = "send"
@@ -80,16 +91,29 @@ fun main(args: Array<String>) = try {
     }.apply { resources += "factory" to ::close }
 
     val mapper = JsonMapper.builder()
-        .addModule(KotlinModule(nullIsSameAsDefault = true))
+        .addModule(
+            KotlinModule.Builder()
+                .withReflectionCacheSize(512)
+                .configure(KotlinFeature.NullToEmptyCollection, false)
+                .configure(KotlinFeature.NullToEmptyMap, false)
+                .configure(KotlinFeature.NullIsSameAsDefault, enabled = true)
+                .configure(KotlinFeature.SingletonSupport, false)
+                .configure(KotlinFeature.StrictNullChecks, false)
+                .build()
+        )
         .addModule(SimpleModule().addAbstractTypeMapping(IHandlerSettings::class.java, handlerSettingType))
         .build()
 
-    val settings = factory.getCustomConfiguration(Settings::class.java, mapper)
-    val eventRouter = factory.eventBatchRouter
-    val messageRouter = factory.messageRouterMessageGroupBatch
-    val grpcRouter = factory.grpcRouter
-
-    run(settings, eventRouter, messageRouter, grpcRouter, handler) { resource, destructor ->
+    run(
+        factory.boxConfiguration.bookName,
+        factory.rootEventId,
+        factory.getCustomConfiguration(Settings::class.java, mapper),
+        factory.eventBatchRouter,
+        factory.messageRouterMessageGroupBatch,
+        factory.transportGroupBatchRouter,
+        factory.grpcRouter,
+        handler
+    ) { resource, destructor ->
         resources += resource to destructor
     }
 } catch (e: Exception) {
@@ -97,21 +121,19 @@ fun main(args: Array<String>) = try {
     exitProcess(1)
 }
 
+private const val RAW_QUEUE_ATTRIBUTE = "raw"
+
 fun run(
+    book: String,
+    rootEventId: EventID,
     settings: Settings,
     eventRouter: MessageRouter<EventBatch>,
-    messageRouter: MessageRouter<MessageGroupBatch>,
+    protoMessageRouter: MessageRouter<MessageGroupBatch>,
+    transportMessageRouter: MessageRouter<GroupBatch>,
     grpcRouter: GrpcRouter,
     handler: IHandler,
     registerResource: (name: String, destructor: () -> Unit) -> Unit
 ) {
-    val connectionId = ConnectionID.newBuilder().setSessionAlias(settings.sessionAlias).build()
-
-    val rootEventId = eventRouter.storeEvent(Event.start().apply {
-        name("WS client '${settings.sessionAlias}' ${Instant.now()}")
-        type("Microservice")
-    }).id
-
     settings.handlerSettings.runCatching(handler::init).onFailure {
         LOGGER.error(it) { "Failed to init request handler" }
         eventRouter.storeEvent(rootEventId, "Failed to init request handler", "Error", it)
@@ -121,14 +143,48 @@ fun run(
     val incomingSequence = createSequence()
     val outgoingSequence = createSequence()
 
-    //TODO: add batching (by size or time)
-    val onMessage = { message: ByteArray, _: Boolean, direction: Direction ->
-        val sequence = if (direction == Direction.FIRST) incomingSequence else outgoingSequence
-        val attribute = if (direction == Direction.FIRST) QueueAttribute.FIRST else QueueAttribute.SECOND
-        messageRouter.send(message.toBatch(connectionId, direction, sequence()), attribute.toString())
+    val executor = Executors.newScheduledThreadPool(1).also {
+        registerResource("executor", it::shutdownGracefully)
     }
 
-    val onEvent = { cause: Throwable?, message: () -> String ->
+    val onMessage: (message: ByteArray, textual: Boolean, direction: Direction) -> Unit = if (settings.useTransport) {
+        val messageBatcher = TransportMessageBatcher(
+            settings.maxBatchSize,
+            settings.maxFlushTime,
+            book,
+            GROUP_SELECTOR,
+            executor
+        ) { batch ->
+            transportMessageRouter.send(batch)
+        }.apply {
+            registerResource("message-batcher", ::close)
+        }
+
+        fun(message: ByteArray, _: Boolean, direction: Direction) {
+            val sequence = if (direction == Direction.FIRST) incomingSequence else outgoingSequence
+            messageBatcher.onMessage(message.toTransport(settings.sessionAlias, direction, sequence()), settings.sessionGroup)
+        }
+    } else {
+        val messageBatcher = ProtoMessageBatcher(
+            settings.maxBatchSize,
+            settings.maxFlushTime,
+            RAW_GROUP_SELECTOR,
+            executor
+        ) { batch ->
+            protoMessageRouter.send(batch, QueueAttribute.RAW.value)
+        }.apply {
+            registerResource("proto-message-batcher", ::close)
+        }
+
+        val connectionId = ConnectionID.newBuilder().setSessionAlias(settings.sessionAlias).build()
+
+        fun(message: ByteArray, _: Boolean, direction: Direction) {
+            val sequence = if (direction == Direction.FIRST) incomingSequence else outgoingSequence
+            messageBatcher.onMessage(message.toProto(connectionId, direction, sequence()))
+        }
+    }
+
+    val onEvent: (cause: Throwable?, message: () -> String) -> Unit = { cause: Throwable?, message: () -> String ->
         val type = if (cause != null) "Error" else "Info"
         eventRouter.storeEvent(rootEventId, message(), type, cause)
     }
@@ -142,7 +198,7 @@ fun run(
 
     val controller = ClientController(client).apply { registerResource("controller", ::close) }
 
-    val listener = MessageListener<MessageGroupBatch> { _, groupBatch ->
+    val protoListener = MessageListener<MessageGroupBatch> { _, groupBatch ->
         if (!controller.isRunning) { // should we reschedule stop if service is already running?
             controller.start(settings.autoStopAfter)
         }
@@ -160,12 +216,42 @@ fun run(
         }
     }
 
-    runCatching {
-        checkNotNull(messageRouter.subscribe(listener, INPUT_QUEUE_ATTRIBUTE))
+    val proto = runCatching {
+        checkNotNull(protoMessageRouter.subscribe(protoListener, INPUT_QUEUE_ATTRIBUTE, RAW_QUEUE_ATTRIBUTE))
     }.onSuccess { monitor ->
-        registerResource("raw-monitor", monitor::unsubscribe)
+        registerResource("proto-raw-monitor", monitor::unsubscribe)
     }.onFailure {
-        throw IllegalStateException("Failed to subscribe to input queue", it)
+        LOGGER.warn(it) { "Failed to subscribe to input protobuf queue" }
+    }
+
+    val transportListener = MessageListener<GroupBatch> { _, groupBatch ->
+        if (!controller.isRunning) { // should we reschedule stop if service is already running?
+            controller.start(settings.autoStopAfter)
+        }
+
+        groupBatch.groups.forEach { group ->
+            group.runCatching {
+                require(messages.size == 1) { "Message group contains more than 1 message" }
+                val message = messages.single()
+                require(message is RawMessage) { "Message in the group is not a raw message" }
+                settings.frameType.send(client, message.body.toByteArray())
+            }.recoverCatching {
+                LOGGER.error(it) { "Failed to handle message group: $group" }
+                eventRouter.storeEvent(rootEventId, "Failed to handle message group: $group", "Error", it)
+            }
+        }
+    }
+
+    val transport = runCatching {
+        checkNotNull(transportMessageRouter.subscribe(transportListener, INPUT_QUEUE_ATTRIBUTE))
+    }.onSuccess { monitor ->
+        registerResource("transport-raw-monitor", monitor::unsubscribe)
+    }.onFailure {
+        LOGGER.warn(it) { "Failed to subscribe to input transport queue" }
+    }
+
+    if (proto.isFailure && transport.isFailure) {
+        error("Subscribe pin should be declared at least one of protobuf or transport protocols")
     }
 
     if (settings.autoStart) client.start()
@@ -187,15 +273,21 @@ data class Settings(
     val uri: String,
     val frameType: FrameType = TEXT,
     val sessionAlias: String,
+    val sessionGroup: String,
     val handlerSettings: IHandlerSettings? = null,
     val grpcStartControl: Boolean = false,
     val autoStart: Boolean = true,
-    val autoStopAfter: Int = 0
+    val autoStopAfter: Int = 0,
+    val maxBatchSize: Int = 100,
+    val maxFlushTime: Long  = 1000,
+    val useTransport: Boolean = true
 ) {
+
     enum class FrameType {
         TEXT {
             override fun send(client: IClient, data: ByteArray) = client.sendText(data.toString(UTF_8))
         },
+        @Suppress("unused")
         BINARY {
             override fun send(client: IClient, data: ByteArray) = client.sendBinary(data)
         };
