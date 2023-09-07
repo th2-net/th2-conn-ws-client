@@ -17,6 +17,11 @@ The main configuration is done by changing following properties:
 + **maxBatchSize** - max size of outgoing message batch (`100` by default)
 + **maxFlushTime** - max message batch flush time (`1000` by default)
 + **useTransport** - use th2 transport or protobuf protocol to publish incoming/outgoing messages (`true` by default)
++ **validateCertificates** - enables/disables server certificate validation (`true` by default)
++ **clientCertificate** - path to client X.509 certificate in PEM format (requires `certificatePrivateKey`, `null` by
+  default)
++ **certificatePrivateKey** - path to client certificate RSA private key (PKCS8 encoded) in PEM format (`null` by
+  default)
 
 Service will also automatically connect prior to message send if it wasn't connected
 
@@ -99,6 +104,9 @@ spec:
     grpcStartControl: true
     autoStart: true
     autoStopAfter: 300
+    validateCertificates: true
+    clientCertificate: /path/to/certificate
+    certificatePrivateKey: /path/to/certificate/private/key
     handlerSettings:
       pingInterval: 30000
   type: th2-conn
@@ -121,6 +129,7 @@ spec:
 ### v0.4.0
 
 * added support for th2 transport protocol
+* added settings to configure TLS certificate validation
 
 #### Updated:
 * updated bom: `4.5.0-dev`
@@ -129,7 +138,8 @@ spec:
 * updated kotlin: `1.8.22`
 
 #### Added:
-* updated common-utils: `2.2.0-dev`
+* common-utils: `2.2.0-dev`
+* conn-http-client: `2.1.0-dev`
 
 ### v0.3.1
 

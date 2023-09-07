@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2021-2023 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,11 @@ package com.exactpro.th2.ws.client.api.impl
 import com.exactpro.th2.common.grpc.Direction
 import com.exactpro.th2.common.grpc.Direction.FIRST
 import com.exactpro.th2.common.grpc.Direction.SECOND
+import com.exactpro.th2.http.client.util.Certificate
 import com.exactpro.th2.ws.client.api.IClient
 import com.exactpro.th2.ws.client.api.IClientSettings
 import com.exactpro.th2.ws.client.api.IHandler
+import com.exactpro.th2.ws.client.util.sslContext
 import mu.KotlinLogging
 import java.net.URI
 import java.net.URLEncoder
@@ -37,12 +39,16 @@ class WebSocketClient(
     private val uri: URI,
     private val handler: IHandler,
     private val onMessage: (message: ByteArray, textual: Boolean, direction: Direction) -> Unit,
-    private val onEvent: (cause: Throwable?, message: () -> String) -> Unit
+    private val onEvent: (cause: Throwable?, message: () -> String) -> Unit,
+    private val validateCertificates: Boolean = true,
+    private val clientCertificate: Certificate? = null
 ) : IClient, WebSocket.Listener {
     private val logger = KotlinLogging.logger {}
     private val textFrames = mutableListOf<String>()
     private val binaryFrames = mutableListOf<ByteArray>()
     private val lock = ReentrantLock()
+    private val isWSS = uri.scheme.equals("wss", true)
+
     @Volatile private lateinit var socket: WebSocket
 
     @Volatile var isRunning: Boolean = false
@@ -208,7 +214,9 @@ class WebSocketClient(
                 textFrames.clear()
                 binaryFrames.clear()
 
-                HttpClient.newHttpClient()
+                HttpClient.newBuilder()
+                    .sslContext(isWSS, validateCertificates, clientCertificate)
+                    .build()
                     .newWebSocketBuilder()
                     .also { settings.builder = it; handler.preOpen(settings) }
                     .buildAsync(settings.uri, this)
@@ -238,7 +246,7 @@ class WebSocketClient(
         return null
     }
 
-    private class WebSocketClientSettings(private val baseUri: URI) : IClientSettings {
+    private class WebSocketClientSettings(baseUri: URI) : IClientSettings {
         private var uriBuilder: URIBuilder = URIBuilder(baseUri)
 
         lateinit var builder: WebSocket.Builder
