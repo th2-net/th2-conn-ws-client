@@ -29,6 +29,8 @@ interface IClientSettings {
         values.forEach { addHeader(name, it) }
     }
 
+    fun subprotocols(mostPreferred: String, vararg lesserPreferred: String)
+
     fun addQueryParam(name: String, value: String)
 
     fun addQueryParams(values: Map<String, String>) {

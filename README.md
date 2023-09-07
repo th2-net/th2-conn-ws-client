@@ -130,6 +130,7 @@ spec:
 
 * added support for th2 transport protocol
 * added settings to configure TLS certificate validation
+* provided ability to specify Web Socket sub-protocols in the IHandler.preOpen method 
 
 #### Updated:
 * updated bom: `4.5.0-dev`

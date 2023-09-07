@@ -256,6 +256,10 @@ class WebSocketClient(
             builder.header(name, value)
         }
 
+        override fun subprotocols(mostPreferred: String, vararg lesserPreferred: String) {
+            builder.subprotocols(mostPreferred, *lesserPreferred)
+        }
+
         override fun addQueryParam(name: String, value: String) {
             uriBuilder.addQueryParam(name, value)
         }
