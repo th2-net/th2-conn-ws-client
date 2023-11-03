@@ -1,4 +1,4 @@
-# WebSocket Client v0.4.0
+# WebSocket Client v1.0.0
 
 This microservice allows sending and receiving messages via WebSocket protocol
 
@@ -126,7 +126,7 @@ spec:
 
 ## Changelog
 
-### v0.4.0
+### v1.0.0
 
 * added support for th2 transport protocol
 * added settings to configure TLS certificate validation

@@ -151,7 +151,7 @@ dependencies {
     implementation('com.exactpro.th2:conn-http-client:2.1.0-dev') {
         because('SslUtils is used')
     }
-    implementation 'com.exactpro.th2:grpc-conn:0.1.0-TS-1663-+'
+    implementation 'com.exactpro.th2:grpc-conn:0.1.0-dev'
 
     implementation 'org.slf4j:slf4j-api'
 
