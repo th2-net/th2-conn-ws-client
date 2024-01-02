@@ -88,14 +88,33 @@ fun main(args: Array<String>) = try {
             }
         }
     })
-
-    val handler = load<IHandler>(DefaultHandler::class.java).apply { resources += "handler" to ::close }
-    val handlerSettingType = load<IHandlerSettingsTypeProvider>(DefaultHandlerSettingsTypeProvider::class.java).type
-
     val factory = args.runCatching(CommonFactory::createFromArguments).getOrElse {
         LOGGER.error(it) { "Failed to create common factory with arguments: ${args.joinToString(" ")}" }
         CommonFactory()
     }.apply { resources += "factory" to ::close }
+
+    runApplication(factory) { resource, destructor ->
+        resources += resource to destructor
+    }
+    ReentrantLock().run {
+        val condition = newCondition()
+        resources += "await-shutdown" to { withLock(condition::signalAll) }
+        withLock(condition::await)
+    }
+
+    LOGGER.info { "Finished running" }
+} catch (e: Exception) {
+    LOGGER.error(e) { "Uncaught exception. Shutting down" }
+    exitProcess(1)
+}
+
+internal fun runApplication(
+    factory: CommonFactory,
+    resources: (String, () -> Unit) -> Unit,
+) {
+    val handler = load<IHandler>(DefaultHandler::class.java).apply { resources("handler", ::close) }
+    val handlerSettingType = load<IHandlerSettingsTypeProvider>(DefaultHandlerSettingsTypeProvider::class.java).type
+
 
     val mapper = JsonMapper.builder()
         .addModule(
@@ -119,13 +138,9 @@ fun main(args: Array<String>) = try {
         factory.messageRouterMessageGroupBatch,
         factory.transportGroupBatchRouter,
         factory.grpcRouter,
-        handler
-    ) { resource, destructor ->
-        resources += resource to destructor
-    }
-} catch (e: Exception) {
-    LOGGER.error(e) { "Uncaught exception. Shutting down" }
-    exitProcess(1)
+        handler,
+        resources,
+    )
 }
 
 private const val RAW_QUEUE_ATTRIBUTE = "raw"
@@ -268,14 +283,6 @@ fun run(
     if (settings.grpcStartControl) grpcRouter.startServer(ControlService(controller))
 
     LOGGER.info { "Successfully started" }
-
-    ReentrantLock().run {
-        val condition = newCondition()
-        registerResource("await-shutdown") { withLock(condition::signalAll) }
-        withLock(condition::await)
-    }
-
-    LOGGER.info { "Finished running" }
 }
 
 data class Settings(

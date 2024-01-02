@@ -30,7 +30,9 @@ import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.WebSocket
 import java.nio.ByteBuffer
+import java.time.Duration
 import java.util.Base64
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -50,6 +52,8 @@ class WebSocketClient(
     private val isWSS = uri.scheme.equals("wss", true)
 
     @Volatile private lateinit var socket: WebSocket
+
+    @Volatile private var connectionFuture: CompletableFuture<*> = CompletableFuture.completedFuture(null)
 
     @Volatile var isRunning: Boolean = false
         private set
@@ -185,6 +189,7 @@ class WebSocketClient(
         }
 
         isRunning = false
+        connectionFuture.cancel(true)
 
         lock.withLock {
             onInfo { "Stopping client" }
@@ -214,13 +219,18 @@ class WebSocketClient(
                 textFrames.clear()
                 binaryFrames.clear()
 
-                HttpClient.newBuilder()
+                val webSocketFuture = HttpClient.newBuilder()
                     .sslContext(isWSS, validateCertificates, clientCertificate)
                     .build()
                     .newWebSocketBuilder()
+                    // avoid deadlock when we try to reconnect and close the client
+                    .connectTimeout(Duration.ofSeconds(60))
                     .also { settings.builder = it; handler.preOpen(settings) }
                     .buildAsync(settings.uri, this)
-                    .get()
+
+                connectionFuture = webSocketFuture
+
+                webSocketFuture.get()
 
                 break
             } catch (e: Exception) {
