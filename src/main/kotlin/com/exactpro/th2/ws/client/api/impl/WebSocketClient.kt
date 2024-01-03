@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2021-2023 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,16 +19,20 @@ package com.exactpro.th2.ws.client.api.impl
 import com.exactpro.th2.common.grpc.Direction
 import com.exactpro.th2.common.grpc.Direction.FIRST
 import com.exactpro.th2.common.grpc.Direction.SECOND
+import com.exactpro.th2.http.client.util.Certificate
 import com.exactpro.th2.ws.client.api.IClient
 import com.exactpro.th2.ws.client.api.IClientSettings
 import com.exactpro.th2.ws.client.api.IHandler
+import com.exactpro.th2.ws.client.util.sslContext
 import mu.KotlinLogging
 import java.net.URI
 import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.WebSocket
 import java.nio.ByteBuffer
+import java.time.Duration
 import java.util.Base64
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -37,13 +41,19 @@ class WebSocketClient(
     private val uri: URI,
     private val handler: IHandler,
     private val onMessage: (message: ByteArray, textual: Boolean, direction: Direction) -> Unit,
-    private val onEvent: (cause: Throwable?, message: () -> String) -> Unit
+    private val onEvent: (cause: Throwable?, message: () -> String) -> Unit,
+    private val validateCertificates: Boolean = true,
+    private val clientCertificate: Certificate? = null
 ) : IClient, WebSocket.Listener {
     private val logger = KotlinLogging.logger {}
     private val textFrames = mutableListOf<String>()
     private val binaryFrames = mutableListOf<ByteArray>()
     private val lock = ReentrantLock()
+    private val isWSS = uri.scheme.equals("wss", true)
+
     @Volatile private lateinit var socket: WebSocket
+
+    @Volatile private var connectionFuture: CompletableFuture<*> = CompletableFuture.completedFuture(null)
 
     @Volatile var isRunning: Boolean = false
         private set
@@ -179,6 +189,7 @@ class WebSocketClient(
         }
 
         isRunning = false
+        connectionFuture.cancel(true)
 
         lock.withLock {
             onInfo { "Stopping client" }
@@ -208,11 +219,18 @@ class WebSocketClient(
                 textFrames.clear()
                 binaryFrames.clear()
 
-                HttpClient.newHttpClient()
+                val webSocketFuture = HttpClient.newBuilder()
+                    .sslContext(isWSS, validateCertificates, clientCertificate)
+                    .build()
                     .newWebSocketBuilder()
+                    // avoid deadlock when we try to reconnect and close the client
+                    .connectTimeout(Duration.ofSeconds(60))
                     .also { settings.builder = it; handler.preOpen(settings) }
                     .buildAsync(settings.uri, this)
-                    .get()
+
+                connectionFuture = webSocketFuture
+
+                webSocketFuture.get()
 
                 break
             } catch (e: Exception) {
@@ -238,7 +256,7 @@ class WebSocketClient(
         return null
     }
 
-    private class WebSocketClientSettings(private val baseUri: URI) : IClientSettings {
+    private class WebSocketClientSettings(baseUri: URI) : IClientSettings {
         private var uriBuilder: URIBuilder = URIBuilder(baseUri)
 
         lateinit var builder: WebSocket.Builder
@@ -246,6 +264,10 @@ class WebSocketClient(
 
         override fun addHeader(name: String, value: String) {
             builder.header(name, value)
+        }
+
+        override fun subprotocols(mostPreferred: String, vararg lesserPreferred: String) {
+            builder.subprotocols(mostPreferred, *lesserPreferred)
         }
 
         override fun addQueryParam(name: String, value: String) {

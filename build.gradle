@@ -1,29 +1,28 @@
+import com.github.jk1.license.filter.LicenseBundleNormalizer
+import com.github.jk1.license.render.JsonReportRenderer
+
 plugins {
     id 'maven-publish'
     id 'signing'
     id 'application'
     id 'com.palantir.docker' version '0.25.0'
     id 'org.jetbrains.kotlin.jvm' version "${kotlin_version}"
-    id "com.github.harbby.gradle.serviceloader" version '1.1.5'
-    id 'io.github.gradle-nexus.publish-plugin' version '1.0.0'
-}
-
-ext {
-    sharedDir = file("${project.rootDir}/shared")
+    id "com.github.harbby.gradle.serviceloader" version '1.1.8'
+    id 'io.github.gradle-nexus.publish-plugin' version '1.3.0'
+    id "org.owasp.dependencycheck" version "8.3.1"
+    id "com.gorylenko.gradle-git-properties" version "2.4.1"
+    id 'com.github.jk1.dependency-license-report' version '2.5'
+    id "de.undercouch.download" version "5.4.0"
 }
 
 group = 'com.exactpro.th2'
 version = release_version
 
-sourceCompatibility = 11
-targetCompatibility = 11
+kotlin {
+    jvmToolchain(11)
+}
 
 repositories {
-    maven {
-        name 'MavenLocal'
-        url sharedDir
-    }
-
     mavenCentral()
 
     maven {
@@ -36,7 +35,7 @@ repositories {
 
     mavenLocal()
 
-    configurations.all {
+    configurations.configureEach {
         resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
         resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
     }
@@ -62,7 +61,7 @@ java {
 }
 
 // conditionals for publications
-tasks.withType(PublishToMavenRepository) {
+tasks.withType(PublishToMavenRepository).configureEach {
     onlyIf {
         (repository == publishing.repositories.nexusRepository &&
                 project.hasProperty('nexus_user') &&
@@ -70,19 +69,18 @@ tasks.withType(PublishToMavenRepository) {
                 project.hasProperty('nexus_url')) ||
                 (repository == publishing.repositories.sonatype &&
                         project.hasProperty('sonatypeUsername') &&
-                        project.hasProperty('sonatypePassword')) ||
-                (repository == publishing.repositories.localRepo)
+                        project.hasProperty('sonatypePassword'))
     }
 }
 
-tasks.withType(Sign) {
+tasks.withType(Sign).configureEach {
     onlyIf {
         project.hasProperty('signingKey') && project.hasProperty('signingPassword')
     }
 }
 
 // disable running task 'initializeSonatypeStagingRepository' on a gitlab
-tasks.whenTaskAdded { task ->
+tasks.configureEach { task ->
     if (task.name == 'initializeSonatypeStagingRepository' &&
             !(project.hasProperty('sonatypeUsername') && project.hasProperty('sonatypePassword'))
     ) {
@@ -124,11 +122,6 @@ publishing {
     }
 
     repositories {
-        maven {
-            name = 'localRepo'
-            url = sharedDir
-        }
-
         //Nexus repo to publish from gitlab
         maven {
             name = 'nexusRepository'
@@ -152,64 +145,47 @@ nexusPublishing {
 }
 
 signing {
-    def signingKey = findProperty("signingKey")
-    def signingPassword = findProperty("signingPassword")
+    String signingKey = findProperty("signingKey")
+    String signingPassword = findProperty("signingPassword")
     useInMemoryPgpKeys(signingKey, signingPassword)
     sign publishing.publications.mavenJava
 }
 
-clean {
-    delete sharedDir
-}
-
 dependencies {
-    api platform('com.exactpro.th2:bom:3.1.0')
+    api platform('com.exactpro.th2:bom:4.5.0')
 
-    implementation 'com.exactpro.th2:common:3.40.0'
-    implementation 'com.exactpro.th2:grpc-conn:0.0.1'
+    implementation 'com.exactpro.th2:common:5.4.1-dev'
+    implementation 'com.exactpro.th2:common-utils:2.2.0-dev'
+    implementation('com.exactpro.th2:conn-http-client:2.1.0-dev') {
+        because('SslUtils is used')
+    }
+    implementation 'com.exactpro.th2:grpc-conn:0.1.0-dev'
 
-    implementation 'org.slf4j:slf4j-log4j12'
     implementation 'org.slf4j:slf4j-api'
 
-    implementation group: 'org.jetbrains.kotlin', name: 'kotlin-stdlib-jdk8', version: kotlin_version
     implementation group: 'org.jetbrains.kotlin', name: 'kotlin-reflect', version: kotlin_version
-    implementation group: 'io.github.microutils', name: 'kotlin-logging', version: '1.7.9'
-    implementation group: 'com.fasterxml.jackson.module', name: 'jackson-module-kotlin', version: '2.11.2'
+    implementation group: 'io.github.microutils', name: 'kotlin-logging', version: '3.0.5'
+    implementation group: 'com.fasterxml.jackson.module', name: 'jackson-module-kotlin', version: '2.15.2'
 
     testImplementation group: 'org.jetbrains.kotlin', name: 'kotlin-test-junit5', version: kotlin_version
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.7.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    testImplementation 'com.exactpro.th2:junit-jupiter-integration:0.0.1-master-6956603819-5241ee5-SNAPSHOT'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testImplementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }
 
 application {
-    mainClassName 'com.exactpro.th2.ws.client.Main'
+    mainClass.set('com.exactpro.th2.ws.client.Main')
 }
 
 applicationName = 'service'
 
-distTar {
-    archiveName "${applicationName}.tar"
-}
-
 dockerPrepare {
-    dependsOn distTar
+    dependsOn installDist
 }
 
 docker {
-    copySpec.from(tarTree("$buildDir/distributions/${applicationName}.tar"))
-}
-
-compileKotlin {
-    kotlinOptions {
-        jvmTarget = "11"
-        freeCompilerArgs += "-XXLanguage:+UnitConversion"
-    }
-}
-
-compileTestKotlin {
-    kotlinOptions {
-        jvmTarget = "11"
-        freeCompilerArgs += "-XXLanguage:+UnitConversion"
-    }
+    copySpec.from("$buildDir/install")
 }
 
 serviceLoader {
@@ -218,5 +194,46 @@ serviceLoader {
 }
 
 test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags("integration")
+    }
+}
+
+tasks.register("integrationTest", Test) {
+    dependsOn(serviceLoaderBuild)
+    useJUnitPlatform {
+        includeTags("integration")
+    }
+}
+
+dependencyCheck {
+    formats = ['SARIF', 'JSON', 'HTML']
+    failBuildOnCVSS = 5
+    suppressionFile = file('suppressions.xml')
+    analyzers {
+        assemblyEnabled = false
+        nugetconfEnabled = false
+        nodeEnabled = false
+    }
+}
+
+licenseReport {
+    def licenseNormalizerBundlePath = "$buildDir/license-normalizer-bundle.json"
+
+    if (!file(licenseNormalizerBundlePath).exists()) {
+        download.run {
+            src 'https://raw.githubusercontent.com/th2-net/.github/main/license-compliance/gradle-license-report/license-normalizer-bundle.json'
+            dest "$buildDir/license-normalizer-bundle.json"
+            overwrite false
+        }
+    }
+
+    filters = [
+            new LicenseBundleNormalizer(licenseNormalizerBundlePath, false)
+    ]
+    renderers = [
+            new JsonReportRenderer('licenses.json', false),
+    ]
+    excludeOwnGroup = false
+    allowedLicensesFile = new URL("https://raw.githubusercontent.com/th2-net/.github/main/license-compliance/gradle-license-report/allowed-licenses.json")
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2021-2023 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,35 +23,46 @@ import com.exactpro.th2.common.grpc.ConnectionID
 import com.exactpro.th2.common.grpc.Direction
 import com.exactpro.th2.common.grpc.MessageGroup
 import com.exactpro.th2.common.grpc.MessageGroupBatch
-import com.exactpro.th2.common.grpc.RawMessage
-import com.exactpro.th2.common.message.toTimestamp
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.transport
 import com.google.protobuf.ByteString
 import com.google.protobuf.MessageLite.Builder
 import com.google.protobuf.MessageOrBuilder
 import com.google.protobuf.util.JsonFormat
-import java.time.Instant
+import com.exactpro.th2.common.grpc.RawMessage as ProtoRawMessage
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.RawMessage as TransportRawMessage
 
 private inline operator fun <T : Builder> T.invoke(block: T.() -> Unit) = apply(block)
 
 fun MessageOrBuilder.toPrettyString(): String = JsonFormat.printer().omittingInsignificantWhitespace().includingDefaultValueFields().print(this)
 
-private fun RawMessage.Builder.toBatch() = run(AnyMessage.newBuilder()::setRawMessage)
+private fun ProtoRawMessage.Builder.toBatch() = run(AnyMessage.newBuilder()::setRawMessage)
     .run(MessageGroup.newBuilder()::addMessages)
     .run(MessageGroupBatch.newBuilder()::addGroups)
     .build()
 
-fun ByteArray.toBatch(
+fun ByteArray.toProto(
     connectionId: ConnectionID,
     direction: Direction,
     sequence: Long,
-): MessageGroupBatch = RawMessage.newBuilder().apply {
-    this.body = ByteString.copyFrom(this@toBatch)
+): ProtoRawMessage.Builder = ProtoRawMessage.newBuilder().apply {
+    this.body = ByteString.copyFrom(this@toProto)
     this.metadataBuilder {
-        this.timestamp = Instant.now().toTimestamp()
         this.idBuilder {
             this.connectionId = connectionId
             this.direction = direction
             this.sequence = sequence
         }
     }
-}.toBatch()
+}
+
+fun ByteArray.toTransport(
+    sessionAlias: String,
+    direction: Direction,
+    sequence: Long,
+): TransportRawMessage.Builder = TransportRawMessage.builder().apply {
+    setBody(this@toTransport)
+    idBuilder()
+        .setSessionAlias(sessionAlias)
+        .setDirection(direction.transport)
+        .setSequence(sequence)
+}
