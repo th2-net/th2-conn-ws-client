@@ -52,6 +52,7 @@ import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import java.time.Duration
 import java.util.LinkedList
 import java.util.Queue
@@ -101,6 +102,7 @@ internal class WsConnectionIntegrationTest {
             }
         }
 
+    @Timeout(10_000, unit = TimeUnit.MILLISECONDS)
     @Test
     @CustomConfigProvider("config")
     fun `test connects to webserver`(
@@ -115,6 +117,9 @@ internal class WsConnectionIntegrationTest {
         runApplication(factory) { name, action -> resources.add(name, action) }
 
         val ws = serverListener.assertConnected(2000)
+        resources.add("ws") {
+            ws.close(1000, "close")
+        }
         ws.send("Hello")
 
         val msg = assertNotNull(msgListener.poll(Duration.ofMillis(1000)), "message was not produced")
@@ -134,9 +139,9 @@ internal class WsConnectionIntegrationTest {
             rawMsg.id.direction,
             "unexpected direction",
         )
-        ws.close(1000, "close")
     }
 
+    @Timeout(10_000, unit = TimeUnit.MILLISECONDS)
     @Test
     @CustomConfigProvider("config")
     fun `sends message to webserver`(
@@ -161,6 +166,9 @@ internal class WsConnectionIntegrationTest {
         )
 
         val ws = serverListener.assertConnected(2000)
+        resources.add("ws") {
+            ws.close(1000, "close")
+        }
         val receivedByServer = serverListener.assertReceived()
         assertEquals("Hello", receivedByServer, "unexpected message received by server")
         val msg = assertNotNull(msgListener.poll(Duration.ofMillis(1000)), "message was not produced")
@@ -180,7 +188,6 @@ internal class WsConnectionIntegrationTest {
             rawMsg.id.direction,
             "unexpected direction",
         )
-        ws.close(1000, "close")
     }
 
     fun config(): CustomConfigSpec =
