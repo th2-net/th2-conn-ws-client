@@ -16,10 +16,15 @@
 
 package com.exactpro.th2.ws.client.integration
 
+import com.exactpro.th2.common.schema.box.configuration.BoxConfiguration
 import com.exactpro.th2.common.schema.factory.CommonFactory
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.Direction
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.GroupBatch
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.MessageId
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.RawMessage
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.toByteArray
+import com.exactpro.th2.common.utils.message.transport.toBatch
+import com.exactpro.th2.common.utils.message.transport.toGroup
 import com.exactpro.th2.conn.grpc.ConnService
 import com.exactpro.th2.test.annotations.CustomConfigProvider
 import com.exactpro.th2.test.annotations.Th2AppFactory
@@ -50,6 +55,10 @@ import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.util.LinkedList
 import java.util.Queue
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.BlockingDeque
+import java.util.concurrent.BlockingQueue
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.test.assertEquals
@@ -120,6 +129,57 @@ internal class WsConnectionIntegrationTest {
             rawMsg.body.toByteArray().toString(Charsets.UTF_8),
             "unexpected message",
         )
+        assertEquals(
+            Direction.INCOMING,
+            rawMsg.id.direction,
+            "unexpected direction",
+        )
+        ws.close(1000, "close")
+    }
+
+    @Test
+    @CustomConfigProvider("config")
+    fun `sends message to webserver`(
+        @Th2AppFactory factory: CommonFactory,
+        @Th2TestFactory test: CommonFactory,
+        resources: CleanupExtension.Registry,
+    ) {
+        val serverListener = WebSocketRecorder()
+        webServer.enqueue(MockResponse().withWebSocketUpgrade(serverListener))
+        val msgListener = CollectorMessageListener.createUnbound<GroupBatch>()
+        test.transportGroupBatchRouter.subscribe(msgListener, "out")
+        runApplication(factory) { name, action -> resources.add(name, action) }
+
+        test.transportGroupBatchRouter.send(
+            RawMessage.builder()
+                .setBody("Hello".toByteArray(Charsets.UTF_8))
+                .setId(MessageId.DEFAULT)
+                .build()
+                .toGroup()
+                .toBatch(BoxConfiguration.DEFAULT_BOOK_NAME, "sessionGroup"),
+            "in",
+        )
+
+        val ws = serverListener.assertConnected(2000)
+        val receivedByServer = serverListener.assertReceived()
+        assertEquals("Hello", receivedByServer, "unexpected message received by server")
+        val msg = assertNotNull(msgListener.poll(Duration.ofMillis(1000)), "message was not produced")
+        Assertions.assertNotNull(msg.groups.singleOrNull()) { "no groups in bath $msg" }
+        Assertions.assertNotNull(msg.groups.single().messages.singleOrNull()) {
+            "no messages in group ${msg.groups}"
+        }
+        val rawMsg = msg.groups.single().messages.single()
+        assertIs<RawMessage>(rawMsg, "not a raw message")
+        assertEquals(
+            "Hello",
+            rawMsg.body.toByteArray().toString(Charsets.UTF_8),
+            "unexpected message",
+        )
+        assertEquals(
+            Direction.OUTGOING,
+            rawMsg.id.direction,
+            "unexpected direction",
+        )
         ws.close(1000, "close")
     }
 
@@ -141,7 +201,7 @@ internal class WsConnectionIntegrationTest {
         )
 
     private class WebSocketRecorder : WebSocketListener() {
-        val messages: Queue<String> = LinkedList()
+        private val messages: BlockingQueue<String> = LinkedBlockingQueue()
         private lateinit var webSocket: WebSocket
         private val lock = ReentrantLock()
         private val condition = lock.newCondition()
@@ -162,7 +222,7 @@ internal class WsConnectionIntegrationTest {
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            messages.add(text)
+            messages.put(text)
         }
 
         fun assertConnected(millis: Long = 1000): WebSocket {
@@ -177,6 +237,10 @@ internal class WsConnectionIntegrationTest {
                 }
                 fail("websocket is not initialized")
             }
+        }
+
+        fun assertReceived(millis: Long = 1000): String {
+            return assertNotNull(messages.poll(millis, TimeUnit.MILLISECONDS), "no message received")
         }
     }
 }
